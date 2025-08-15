@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>Quản lý File</title>
+    <link rel="stylesheet" href="../css/styles.css">
+    <link rel="stylesheet" href="file-manager.css"> </head>
+<body>
+    <div class="header">
+        <h1>📁 Quản lý File (IndexedDB)</h1>
+    </div>
+    <div class="content">
+        <div class="toolbar">
+            <button id="uploadFilesBtn" class="btn btn-primary">Tải Lên Files</button>
+            <button id="uploadFolderBtn" class="btn btn-secondary">Tải Lên Thư Mục</button>
+            <input type="file" id="fileInput" multiple hidden>
+        </div>
+        <div class="file-stats">
+            <span>Dung lượng đã dùng: <b id="storageUsed">0 KB</b></span>
+            <button id="clearAllFilesBtn" class="btn btn-danger btn-small">Xóa Tất Cả</button>
+        </div>
+        <div id="fileList" class="file-list-container">
+            </div>
+    </div>
+    
+    <script src="../js/indexeddb-helper.js"></script>
+    <script src="../js/file-manager.js"></script>
+</body>
+</html>

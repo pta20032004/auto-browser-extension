@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>Auto Clicker</title>
+    <link rel="stylesheet" href="../css/styles.css">
+</head>
+<body>
+    <div class="header">
+        <h1>🎯 Tự động Click</h1>
+    </div>
+    <div class="content" style="height: auto;">
+        <div id="clicker-ui">
+            <button id="startSelection" class="btn btn-primary" style="width: 100%; margin-bottom: 16px;">
+                Chọn Vị trí trên Trang Web
+            </button>
+            <div class="coords-display" id="coordsDisplay" style="display: none; margin-bottom: 16px;">
+                <div class="coords-grid">
+                    <div class="coord-item">
+                        <div class="coord-label">Tọa độ X</div>
+                        <div class="coord-value" id="xCoord">--</div>
+                    </div>
+                    <div class="coord-item">
+                        <div class="coord-label">Tọa độ Y</div>
+                        <div class="coord-value" id="yCoord">--</div>
+                    </div>
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Delay giữa các lần click (miligiây)</label>
+                <input type="number" id="delay" class="form-control" value="1000">
+            </div>
+            <div class="task-controls" style="margin-top: 16px;">
+                <button id="startClicking" class="btn btn-success" style="flex: 1;">Bắt đầu Click</button>
+                <button id="stopClicking" class="btn btn-danger" style="flex: 1;">Dừng Click</button>
+            </div>
+        </div>
+    </div>
+    <script src="../js/autoclicker.js"></script>
+</body>
+</html>

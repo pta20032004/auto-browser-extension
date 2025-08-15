@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>Quản lý Kịch bản</title>
+    <link rel="stylesheet" href="../css/styles.css">
+   
+<body>
+    <div class="header">
+        <h1>📝 Quản lý Kịch bản</h1>
+    </div>
+    <div class="content">
+        <div class="toolbar">
+            <button id="addStepBtn" class="btn btn-primary">Thêm Bước</button>
+            <button id="saveScriptBtn" class="btn btn-success">Lưu</button>
+            <button id="loadScriptBtn" class="btn btn-secondary">Tải</button>
+            <button id="clearScriptBtn" class="btn btn-danger">Xóa Script</button>
+        </div>
+        
+        <div id="scriptSteps" class="script-steps-container">
+            </div>
+
+        <div class="run-section">
+             <button id="runScriptBtn" class="btn btn-primary" style="width: 100%;">▶️ Chạy Kịch Bản</button>
+        </div>
+    </div>
+
+    <div id="addStepModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h3>Thêm/Sửa Bước</h3>
+            <div class="form-group">
+                <label for="stepType">Loại hành động</label>
+                <select id="stepType" class="form-control">
+                    <option value="click">Click (Tọa độ)</option>
+                    <option value="clickElement">Click Element</option>
+                    <option value="type">Nhập Text</option>
+                    <option value="press">Nhấn Phím</option>
+                    <option value="waitForElement">Chờ Element</option>
+                    <option value="wait">Chờ (Delay)</option>
+                    <option value="scroll">Scroll</option>
+                    <option value="hover">Hover</option>
+                    <option value="selectOption">Chọn Option</option>
+                    <option value="check">Check/Uncheck</option>
+                    <option value="getText">Lấy Text</option>
+                    <option value="getAttribute">Lấy Attribute</option>
+                    <option value="goto">Đi tới URL</option>
+                    <option value="reload">Reload Trang</option>
+                </select>
+            </div>
+            <div id="stepParams"></div>
+            <div class="modal-footer">
+                <button id="confirmAddStep" class="btn btn-primary">Xác nhận</button>
+                <button id="cancelAddStep" class="btn btn-secondary">Hủy</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="scriptManagerModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h3>Lưu & Tải Kịch Bản</h3>
+            <div class="form-group">
+                <label for="scriptName">Tên kịch bản</label>
+                <input type="text" id="scriptName" class="form-control" placeholder="Ví dụ: Login vào trang ABC">
+                <button id="confirmSaveScript" class="btn btn-success" style="margin-top: 8px;">Lưu mới</button>
+            </div>
+            <hr>
+            <h4>Các kịch bản đã lưu</h4>
+            <div id="savedScripts" class="saved-scripts-list"></div>
+            <div class="modal-footer">
+                 <button id="cancelScriptManager" class="btn btn-secondary">Đóng</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="../js/indexeddb-helper.js"></script>
+    <script src="../js/script-builder.js"></script>
+</body>
+</html>
