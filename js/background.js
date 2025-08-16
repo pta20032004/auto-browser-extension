@@ -4,7 +4,46 @@ let isRunning = false;
 let clickCount = 0;
 let maxClicks = 100;
 
-// Message listener
+// ====================================================================
+// XỬ LÝ NHẤN VÀO EXTENSION ICON
+// ====================================================================
+chrome.action.onClicked.addListener((tab) => {
+    // Kiểm tra URL trước khi inject - không inject vào trang hệ thống
+    if (tab.url.startsWith('chrome://') || 
+        tab.url.startsWith('chrome-extension://') ||
+        tab.url.startsWith('edge://') ||
+        tab.url.startsWith('about:') ||
+        tab.url.startsWith('moz-extension://')) {
+        
+        console.log('Cannot inject into system page:', tab.url);
+        showNotification('Không thể hoạt động', 'Extension không thể chạy trên trang hệ thống này.');
+        return;
+    }
+
+    // Gửi message đến content script để toggle sidebar
+    chrome.tabs.sendMessage(tab.id, { 
+        action: "toggle_sidebar" 
+    }, (response) => {
+        if (chrome.runtime.lastError) {
+            // Nếu content script chưa được inject, inject nó
+            console.log('Content script not found, injecting...');
+            injectContentScript(tab.id, () => {
+                // Sau khi inject thành công, gửi lại message
+                setTimeout(() => {
+                    chrome.tabs.sendMessage(tab.id, { 
+                        action: "toggle_sidebar" 
+                    });
+                }, 500);
+            });
+        } else {
+            console.log('Sidebar toggled:', response);
+        }
+    });
+});
+
+// ====================================================================
+// MESSAGE LISTENER
+// ====================================================================
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     console.log('Background received:', request);
     
@@ -26,11 +65,36 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     .catch(error => sendResponse({ success: false, error: error.message }));
                 return true; // Async response
                 
+            case "executeStep":
+                executeStep(request.step)
+                    .then(result => sendResponse({ success: true, result }))
+                    .catch(error => sendResponse({ success: false, error: error.message }));
+                return true; // Async response
+                
             case "getPageInfo":
                 getPageInfo()
                     .then(result => sendResponse({ success: true, result }))
                     .catch(error => sendResponse({ success: false, error: error.message }));
                 return true;
+                
+            // Chuyển tiếp message cập nhật tọa độ đến tất cả các tab
+            case "updateCoords":
+                // Broadcast đến tất cả tabs đang mở extension
+                chrome.tabs.query({}, (tabs) => {
+                    tabs.forEach(tab => {
+                        chrome.tabs.sendMessage(tab.id, {
+                            action: "coordsUpdated",
+                            coords: request.coords
+                        }, () => {
+                            // Ignore errors for tabs without content script
+                            if (chrome.runtime.lastError) {
+                                console.log('Tab không có content script:', tab.id);
+                            }
+                        });
+                    });
+                });
+                sendResponse({ success: true });
+                break;
                 
             default:
                 sendResponse({ success: false, error: "Unknown action" });
@@ -43,7 +107,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
 });
 
-// Auto-click functions
+// ====================================================================
+// AUTO-CLICK FUNCTIONS
+// ====================================================================
 function startAutoClick(interval, maxClicksCount = 100) {
     if (clickInterval) {
         clearInterval(clickInterval);
@@ -122,7 +188,9 @@ function stopAutoClick() {
     console.log("Đã dừng Auto-click");
 }
 
-// Script execution
+// ====================================================================
+// SCRIPT EXECUTION
+// ====================================================================
 async function executeAutomationScript(script) {
     const steps = script.steps || script;
     const results = [];
@@ -190,7 +258,9 @@ function executeStep(step) {
     });
 }
 
-// Page info
+// ====================================================================
+// PAGE INFO
+// ====================================================================
 async function getPageInfo() {
     return new Promise((resolve, reject) => {
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -219,28 +289,48 @@ async function getPageInfo() {
     });
 }
 
-// Utility functions
+// ====================================================================
+// UTILITY FUNCTIONS
+// ====================================================================
 function injectContentScript(tabId, callback) {
-    chrome.scripting.executeScript({
-        target: { tabId: tabId },
-        files: ['js/content.js']
-    }, () => {
+    // Lấy thông tin tab để kiểm tra URL
+    chrome.tabs.get(tabId, (tab) => {
         if (chrome.runtime.lastError) {
-            console.error("Tiêm content script thất bại:", chrome.runtime.lastError.message);
-        } else {
-            console.log("Tiêm content script thành công");
-            if (callback) {
-                setTimeout(callback, 500);
-            }
+            console.error("Không thể lấy thông tin tab:", chrome.runtime.lastError.message);
+            return;
         }
+
+        // Kiểm tra URL trước khi inject
+        if (tab.url.startsWith('chrome://') || 
+            tab.url.startsWith('chrome-extension://') ||
+            tab.url.startsWith('edge://') ||
+            tab.url.startsWith('about:') ||
+            tab.url.startsWith('moz-extension://')) {
+            
+            console.log('Cannot inject content script into system page:', tab.url);
+            return;
+        }
+
+        // Tiến hành inject content script
+        chrome.scripting.executeScript({
+            target: { tabId: tabId },
+            files: ['js/content.js']
+        }, () => {
+            if (chrome.runtime.lastError) {
+                console.error("Tiêm content script thất bại:", chrome.runtime.lastError.message);
+            } else {
+                console.log("Tiêm content script thành công");
+                if (callback) {
+                    setTimeout(callback, 500);
+                }
+            }
+        });
     });
 }
 
-// <<< SỬA LỖI Ở HÀM NÀY
 function showNotification(title, message) {
     chrome.notifications.create({
         type: 'basic',
-        // Dùng chrome.runtime.getURL để tạo đường dẫn tuyệt đối và đầy đủ
         iconUrl: chrome.runtime.getURL("icons/icon48.png"),
         title: title,
         message: message
@@ -255,7 +345,9 @@ function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// Extension lifecycle
+// ====================================================================
+// EXTENSION LIFECYCLE
+// ====================================================================
 chrome.runtime.onStartup.addListener(() => {
     console.log('Web Automation Suite đã khởi động');
 });

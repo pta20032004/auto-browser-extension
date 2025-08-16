@@ -2,33 +2,254 @@
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
-    <link rel="stylesheet" href="../css/styles.css">
-    <title>Automation Suite</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="../css/style.css">
+    <title>Web Automation Suite</title>
 </head>
 <body>
+    <!-- Header -->
     <div class="header">
         <h1>Automation Suite</h1>
-    </div>
-    <nav class="nav">
-        <button class="nav-item active" data-page="autoclicker">🎯 Click</button>
-        <button class="nav-item" data-page="scripts">📝 Kịch Bản</button>
-        <button class="nav-item" data-page="files">📁 Files</button>
-    </nav>
-    <div class="content">
-        <div class="page active" id="autoclicker">
-            <h3>Tự động Click</h3>
-            <p>Giao diện cho chức năng auto click...</p>
-            </div>
-        <div class="page" id="scripts">
-             </div>
-        <div class="page" id="files">
-            </div>
+        <p>Tự động hóa web thông minh</p>
     </div>
 
+    <!-- Navigation -->
+    <nav class="nav">
+        <button class="nav-item active" data-page="automation">🎯 Auto</button>
+        <button class="nav-item" data-page="scripts">📝 Script</button>
+        <button class="nav-item" data-page="files">📁 Files</button>
+        <button class="nav-item" data-page="settings">⚙️ Settings</button>
+    </nav>
+
+    <!-- Content Area -->
+    <div class="content">
+        <!-- Automation Page -->
+        <div class="page active" id="automation">
+            <!-- Quick Actions -->
+            <div class="quick-actions">
+                <div class="action-card" id="startSelection">
+                    <div class="icon">🎯</div>
+                    <div class="title">Chọn vị trí</div>
+                    <div class="desc">Click để chọn tọa độ</div>
+                </div>
+                <div class="action-card" id="startClicking">
+                    <div class="icon">▶️</div>
+                    <div class="title">Bắt đầu</div>
+                    <div class="desc">Chạy auto click</div>
+                </div>
+                <div class="action-card" id="stopClicking">
+                    <div class="icon">⏹️</div>
+                    <div class="title">Dừng lại</div>
+                    <div class="desc">Ngừng auto click</div>
+                </div>
+                <div class="action-card" id="recordAction">
+                    <div class="icon">⏺️</div>
+                    <div class="title">Ghi lại</div>
+                    <div class="desc">Record actions</div>
+                </div>
+            </div>
+
+            <!-- Coordinates Display -->
+            <div class="coords-display" id="coordsDisplay" style="display: none;">
+                <h4>Tọa độ đã chọn</h4>
+                <div class="coords-grid">
+                    <div class="coord-item">
+                        <div class="coord-label">X</div>
+                        <div class="coord-value" id="xCoord">0</div>
+                    </div>
+                    <div class="coord-item">
+                        <div class="coord-label">Y</div>
+                        <div class="coord-value" id="yCoord">0</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Current Task -->
+            <div class="current-task">
+                <div class="task-header">
+                    <div class="task-title">Cài đặt nhanh</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Delay giữa các click (ms)</label>
+                    <input type="number" id="delay" class="form-control" value="1000" min="50" max="10000">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Số lần click tối đa</label>
+                    <input type="number" id="maxClicks" class="form-control" value="100" min="1" max="1000">
+                </div>
+            </div>
+        </div>
+
+        <!-- Scripts Page -->
+        <div class="page" id="scripts">
+            <div class="step-builder">
+                <div class="task-header">
+                    <div class="task-title">Xây dựng kịch bản</div>
+                    <div class="task-controls">
+                        <button class="btn btn-primary btn-small" id="addStepBtn">Thêm bước</button>
+                        <button class="btn btn-secondary btn-small" id="loadScriptBtn">Tải script</button>
+                        <button class="btn btn-success btn-small" id="saveScriptBtn">Lưu script</button>
+                    </div>
+                </div>
+                
+                <div id="scriptSteps" class="script-steps">
+                    <div class="empty-state">
+                        <div class="icon">📝</div>
+                        <div class="title">Chưa có bước nào</div>
+                        <div class="desc">Nhấn "Thêm bước" để bắt đầu</div>
+                    </div>
+                </div>
+
+                <div class="task-controls">
+                    <button class="btn btn-success" id="runScriptBtn">▶️ Chạy script</button>
+                    <button class="btn btn-danger" id="clearScriptBtn">🗑️ Xóa tất cả</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Files Page -->
+        <div class="page" id="files">
+            <!-- Upload Area -->
+            <div class="file-upload-area">
+                <div class="upload-zone">
+                    <div class="upload-icon">📁</div>
+                    <div class="upload-text">Tải lên files hoặc thư mục</div>
+                    <div class="upload-subtext">Kéo thả hoặc nhấn nút để chọn</div>
+                </div>
+                <div class="upload-actions">
+                    <button class="btn btn-primary btn-small" id="uploadFilesBtn">Chọn Files</button>
+                    <button class="btn btn-secondary btn-small" id="uploadFolderBtn">Chọn Thư mục</button>
+                </div>
+            </div>
+
+            <!-- File Stats -->
+            <div class="file-stats">
+                <div class="stat-item">
+                    <span class="stat-label">Dung lượng:</span>
+                    <span class="stat-value" id="storageUsed">0 KB</span>
+                </div>
+                <div class="stat-actions">
+                    <button class="btn btn-danger btn-small" id="clearAllFilesBtn">Xóa tất cả</button>
+                </div>
+            </div>
+
+            <!-- File List -->
+            <div class="file-list" id="fileList">
+                <div class="empty-state">
+                    <div class="icon">📄</div>
+                    <div class="title">Chưa có file nào</div>
+                    <div class="desc">Tải lên files để bắt đầu</div>
+                </div>
+            </div>
+
+            <!-- Hidden file input -->
+            <input type="file" id="fileInput" style="display: none;" multiple>
+        </div>
+
+        <!-- Settings Page -->
+        <div class="page" id="settings">
+            <div class="setting-group">
+                <h3>Cài đặt Auto Click</h3>
+                <div class="setting-item">
+                    <div class="setting-label">Delay mặc định (ms)</div>
+                    <div class="setting-control">
+                        <input type="number" value="1000" min="50" max="10000">
+                    </div>
+                </div>
+                <div class="setting-item">
+                    <div class="setting-label">Số click tối đa</div>
+                    <div class="setting-control">
+                        <input type="number" value="100" min="1" max="1000">
+                    </div>
+                </div>
+            </div>
+
+            <div class="setting-group">
+                <h3>Cài đặt Script</h3>
+                <div class="setting-item">
+                    <div class="setting-label">Delay giữa các bước (ms)</div>
+                    <div class="setting-control">
+                        <input type="number" value="500" min="100" max="5000">
+                    </div>
+                </div>
+                <div class="setting-item">
+                    <div class="setting-label">Timeout mặc định (ms)</div>
+                    <div class="setting-control">
+                        <input type="number" value="5000" min="1000" max="30000">
+                    </div>
+                </div>
+            </div>
+
+            <div class="setting-group">
+                <h3>Về extension</h3>
+                <div class="setting-item">
+                    <div class="setting-label">Phiên bản</div>
+                    <div class="setting-control">4.0</div>
+                </div>
+                <div class="setting-item">
+                    <div class="setting-label">Cập nhật cuối</div>
+                    <div class="setting-control">2024</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Step Modal -->
+    <div id="addStepModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">Thêm bước mới</h3>
+                <button class="close">&times;</button>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Loại bước</label>
+                <select id="stepType" class="form-control">
+                    <option value="click">Click (tọa độ)</option>
+                    <option value="clickElement">Click Element</option>
+                    <option value="type">Nhập text</option>
+                    <option value="press">Nhấn phím</option>
+                    <option value="wait">Chờ</option>
+                    <option value="scroll">Scroll</option>
+                    <option value="hover">Hover</option>
+                    <option value="goto">Đi tới URL</option>
+                </select>
+            </div>
+            <div id="stepParams"></div>
+            <div class="task-controls">
+                <button class="btn btn-primary" id="confirmAddStep">Thêm</button>
+                <button class="btn btn-secondary" id="cancelAddStep">Hủy</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Script Manager Modal -->
+    <div id="scriptManagerModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">Quản lý Script</h3>
+                <button class="close">&times;</button>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Tên script</label>
+                <input type="text" id="scriptName" class="form-control" placeholder="Nhập tên script...">
+            </div>
+            <div class="task-controls">
+                <button class="btn btn-primary" id="confirmSaveScript">Lưu</button>
+                <button class="btn btn-secondary" id="cancelScriptManager">Hủy</button>
+            </div>
+            <hr>
+            <h4>Scripts đã lưu</h4>
+            <div id="savedScripts" class="script-list">
+                <div class="empty-state">Chưa có script nào được lưu</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
     <script src="../js/indexeddb-helper.js"></script>
     <script src="../js/autoclicker.js"></script>
     <script src="../js/script-builder.js"></script>
     <script src="../js/file-manager.js"></script>
-    <script src="../js/sidebar.js"></script>
+    <script src="../js/slidebar.js"></script>
 </body>
 </html>
