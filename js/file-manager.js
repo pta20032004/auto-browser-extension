@@ -1,9 +1,10 @@
-// File Manager for Auto Clicker Extension
+// File Manager for Auto Clicker Extension - Enhanced with Clipboard
 class FileManager {
     constructor() {
         this.initializeEventListeners();
         this.loadFileList();
         this.updateStorageInfo();
+        this.initializeClipboard();
     }
 
     initializeEventListeners() {
@@ -17,6 +18,11 @@ class FileManager {
             this.selectFiles();
         });
 
+        // Paste image button
+        document.getElementById('pasteImageBtn').addEventListener('click', () => {
+            this.pasteImageFromClipboard();
+        });
+
         // Clear all files button
         document.getElementById('clearAllFilesBtn').addEventListener('click', () => {
             this.clearAllFiles();
@@ -26,6 +32,167 @@ class FileManager {
         document.getElementById('fileInput').addEventListener('change', (e) => {
             this.handleFileSelection(e);
         });
+    }
+
+    initializeClipboard() {
+        // Listen for paste events globally within the sidebar
+        document.addEventListener('paste', (e) => {
+            this.handleClipboardPaste(e);
+        });
+
+        // Add visual feedback for paste availability
+        this.updatePasteButtonState();
+    }
+
+    async updatePasteButtonState() {
+        const pasteBtn = document.getElementById('pasteImageBtn');
+        if (!pasteBtn) return;
+
+        try {
+            // Check if clipboard API is available
+            if (!navigator.clipboard || !navigator.clipboard.read) {
+                pasteBtn.disabled = true;
+                pasteBtn.title = 'Clipboard API không được hỗ trợ';
+                return;
+            }
+
+            // Check clipboard permissions
+            const permission = await navigator.permissions.query({ name: 'clipboard-read' });
+            if (permission.state === 'denied') {
+                pasteBtn.disabled = true;
+                pasteBtn.title = 'Không có quyền truy cập clipboard';
+                return;
+            }
+
+            pasteBtn.disabled = false;
+            pasteBtn.title = 'Dán ảnh từ clipboard (Ctrl+V)';
+
+        } catch (error) {
+            console.warn('Clipboard check failed:', error);
+            pasteBtn.disabled = false; // Still allow manual trigger
+            pasteBtn.title = 'Dán ảnh từ clipboard';
+        }
+    }
+
+    async handleClipboardPaste(event) {
+        // Only handle paste when in files tab
+        const filesTab = document.getElementById('files');
+        if (!filesTab || !filesTab.classList.contains('active')) {
+            return;
+        }
+
+        event.preventDefault();
+        
+        let clipboardItems = [];
+
+        // Try different methods to get clipboard data
+        if (event.clipboardData && event.clipboardData.items) {
+            // From paste event
+            clipboardItems = Array.from(event.clipboardData.items);
+        } else if (navigator.clipboard && navigator.clipboard.read) {
+            // From clipboard API
+            try {
+                const items = await navigator.clipboard.read();
+                clipboardItems = Array.from(items);
+            } catch (error) {
+                console.warn('Failed to read clipboard:', error);
+                this.showAlert('Không thể đọc clipboard. Vui lòng thử lại.', 'warning');
+                return;
+            }
+        }
+
+        await this.processClipboardItems(clipboardItems);
+    }
+
+    async pasteImageFromClipboard() {
+        const pasteBtn = document.getElementById('pasteImageBtn');
+        const originalText = pasteBtn.textContent;
+        pasteBtn.textContent = 'Đang dán...';
+        pasteBtn.disabled = true;
+
+        try {
+            if (!navigator.clipboard || !navigator.clipboard.read) {
+                throw new Error('Clipboard API không được hỗ trợ');
+            }
+
+            const clipboardItems = await navigator.clipboard.read();
+            await this.processClipboardItems(Array.from(clipboardItems));
+
+        } catch (error) {
+            console.error('Paste from clipboard failed:', error);
+            this.showAlert('Không thể dán từ clipboard: ' + error.message, 'error');
+        } finally {
+            pasteBtn.textContent = originalText;
+            pasteBtn.disabled = false;
+        }
+    }
+
+    async processClipboardItems(clipboardItems) {
+        let imageFound = false;
+        let processedCount = 0;
+
+        for (const item of clipboardItems) {
+            try {
+                // Handle clipboard item from paste event
+                if (item.kind === 'file' && item.type.startsWith('image/')) {
+                    const file = item.getAsFile();
+                    if (file) {
+                        await this.saveClipboardImage(file);
+                        imageFound = true;
+                        processedCount++;
+                    }
+                }
+                // Handle clipboard item from clipboard API
+                else if (item.types && item.types.some(type => type.startsWith('image/'))) {
+                    const imageType = item.types.find(type => type.startsWith('image/'));
+                    const blob = await item.getType(imageType);
+                    const file = new File([blob], `clipboard_image_${Date.now()}.${this.getExtensionFromMimeType(imageType)}`, {
+                        type: imageType
+                    });
+                    await this.saveClipboardImage(file);
+                    imageFound = true;
+                    processedCount++;
+                }
+            } catch (error) {
+                console.warn('Failed to process clipboard item:', error);
+            }
+        }
+
+        if (imageFound) {
+            this.loadFileList();
+            this.updateStorageInfo();
+            this.showAlert(`Đã dán thành công ${processedCount} ảnh từ clipboard!`, 'success');
+        } else {
+            this.showAlert('Không tìm thấy ảnh trong clipboard. Hãy copy ảnh trước.', 'warning');
+        }
+    }
+
+    async saveClipboardImage(file) {
+        // Generate filename if not provided
+        if (file.name === 'clipboard_image' || !file.name.includes('.')) {
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const extension = this.getExtensionFromMimeType(file.type) || 'png';
+            const newName = `clipboard_${timestamp}.${extension}`;
+            
+            // Create new file with proper name
+            file = new File([file], newName, { type: file.type });
+        }
+
+        // Save to clipboard folder
+        return await window.dbHelper.saveFile(file, 'clipboard');
+    }
+
+    getExtensionFromMimeType(mimeType) {
+        const mimeToExt = {
+            'image/jpeg': 'jpg',
+            'image/jpg': 'jpg',
+            'image/png': 'png',
+            'image/gif': 'gif',
+            'image/bmp': 'bmp',
+            'image/webp': 'webp',
+            'image/svg+xml': 'svg'
+        };
+        return mimeToExt[mimeType] || 'png';
     }
 
     selectFolder() {
@@ -222,6 +389,16 @@ class FileManager {
             fileControls.appendChild(viewBtn);
         }
 
+        // Copy image button for images
+        if (file.type.startsWith('image/')) {
+            const copyBtn = document.createElement('button');
+            copyBtn.textContent = '📋';
+            copyBtn.className = 'copy-btn';
+            copyBtn.title = 'Copy ảnh vào clipboard';
+            copyBtn.onclick = () => this.copyImageToClipboard(file);
+            fileControls.appendChild(copyBtn);
+        }
+
         const downloadBtn = document.createElement('button');
         downloadBtn.textContent = 'Tải';
         downloadBtn.className = 'download-btn';
@@ -237,6 +414,29 @@ class FileManager {
         fileElement.appendChild(fileInfo);
         fileElement.appendChild(fileControls);
         container.appendChild(fileElement);
+    }
+
+    async copyImageToClipboard(file) {
+        try {
+            const fileData = await window.dbHelper.getFile(file.id);
+            
+            // Convert data URL to blob
+            const response = await fetch(fileData.data);
+            const blob = await response.blob();
+
+            // Copy to clipboard
+            await navigator.clipboard.write([
+                new ClipboardItem({
+                    [blob.type]: blob
+                })
+            ]);
+
+            this.showAlert(`Đã copy ảnh "${file.name}" vào clipboard!`, 'success');
+
+        } catch (error) {
+            console.error('Copy to clipboard failed:', error);
+            this.showAlert('Không thể copy ảnh vào clipboard: ' + error.message, 'error');
+        }
     }
 
     toggleFolderExpansion(folderElement, folderName, files) {
@@ -426,6 +626,59 @@ class FileManager {
         });
     }
 
+    showAlert(message, type = 'info') {
+        // Create enhanced alert system for the sidebar
+        const alertDiv = document.createElement('div');
+        alertDiv.className = `alert alert-${type}`;
+        alertDiv.textContent = message;
+        alertDiv.style.cssText = `
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background: ${type === 'success' ? '#d4edda' : type === 'error' ? '#f8d7da' : type === 'warning' ? '#fff3cd' : '#d1ecf1'};
+            color: ${type === 'success' ? '#155724' : type === 'error' ? '#721c24' : type === 'warning' ? '#856404' : '#0c5460'};
+            border: 1px solid ${type === 'success' ? '#c3e6cb' : type === 'error' ? '#f5c6cb' : type === 'warning' ? '#ffeaa7' : '#bee5eb'};
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 11px;
+            z-index: 10000;
+            max-width: 280px;
+            word-wrap: break-word;
+            animation: slideInRight 0.3s ease;
+        `;
+        
+        // Add animation CSS if not exists
+        if (!document.querySelector('#sidebar-alert-animations')) {
+            const style = document.createElement('style');
+            style.id = 'sidebar-alert-animations';
+            style.textContent = `
+                @keyframes slideInRight {
+                    from { transform: translateX(100%); opacity: 0; }
+                    to { transform: translateX(0); opacity: 1; }
+                }
+                @keyframes slideOutRight {
+                    from { transform: translateX(0); opacity: 1; }
+                    to { transform: translateX(100%); opacity: 0; }
+                }
+            `;
+            document.head.appendChild(style);
+        }
+        
+        document.body.appendChild(alertDiv);
+        
+        // Auto remove after 4 seconds
+        setTimeout(() => {
+            if (alertDiv.parentNode) {
+                alertDiv.style.animation = 'slideOutRight 0.3s ease';
+                setTimeout(() => {
+                    if (alertDiv.parentNode) {
+                        alertDiv.parentNode.removeChild(alertDiv);
+                    }
+                }, 300);
+            }
+        }, 4000);
+    }
+
     // Utility method to get file content as text (useful for automation scripts)
     async getFileContent(fileName, folderPath = '') {
         try {
@@ -472,6 +725,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // Make file manager utilities globally available for automation scripts
     window.FileManagerUtils = {
         getFileContent: (fileName, folderPath) => fileManager.getFileContent(fileName, folderPath),
-        listFiles: (folderPath) => fileManager.listFiles(folderPath)
+        listFiles: (folderPath) => fileManager.listFiles(folderPath),
+        copyImageToClipboard: (file) => fileManager.copyImageToClipboard(file),
+        pasteImageFromClipboard: () => fileManager.pasteImageFromClipboard()
     };
 });

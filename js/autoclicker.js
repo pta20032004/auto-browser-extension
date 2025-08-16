@@ -17,7 +17,8 @@ document.addEventListener('DOMContentLoaded', () => {
         isRunning: false,
         isRecording: false,
         clickCount: 0,
-        maxClicks: 100
+        maxClicks: 100,
+        isPicking: false
     };
 
     // Get current tab ID from parent
@@ -55,11 +56,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 setTimeout(() => {
                     if (currentTabId) {
                         startLocationPicking();
+                    } else {
+                        showAlert('Không thể xác định tab. Vui lòng thử lại.', 'error');
+                        resetSelectionButton();
                     }
-                }, 500);
+                }, 1000);
                 return;
             }
-            startLocationPicking();
+            
+            if (tabState.isPicking) {
+                // If already picking, cancel it
+                cancelLocationPicking();
+            } else {
+                startLocationPicking();
+            }
         });
     }
 
@@ -136,15 +146,42 @@ document.addEventListener('DOMContentLoaded', () => {
     // ====================================================================
 
     function startLocationPicking() {
+        if (tabState.isPicking) return;
+        
+        updateTabState({ isPicking: true });
         sendMessageToParent({ action: "startPicking" });
         
-        // Visual feedback
+        // Update UI to show picking state
         if (startSelectionBtn) {
             startSelectionBtn.classList.add('btn-secondary');
             startSelectionBtn.querySelector('.title').textContent = 'Đang chọn...';
+            startSelectionBtn.querySelector('.desc').textContent = 'Click để hủy';
         }
         
-        showAlert(`Tab ${currentTabId}: Đang chờ chọn tọa độ...`, 'info');
+        showAlert(`Tab ${currentTabId}: Click vào vị trí muốn auto-click...`, 'info');
+        
+        // Auto-cancel after 30 seconds
+        setTimeout(() => {
+            if (tabState.isPicking) {
+                cancelLocationPicking();
+                showAlert('Đã hủy chọn tọa độ (timeout)', 'warning');
+            }
+        }, 30000);
+    }
+
+    function cancelLocationPicking() {
+        updateTabState({ isPicking: false });
+        sendMessageToParent({ action: "cancelPicking" });
+        resetSelectionButton();
+        showAlert(`Tab ${currentTabId}: Đã hủy chọn tọa độ`, 'info');
+    }
+
+    function resetSelectionButton() {
+        if (startSelectionBtn) {
+            startSelectionBtn.classList.remove('btn-secondary');
+            startSelectionBtn.querySelector('.title').textContent = 'Chọn vị trí';
+            startSelectionBtn.querySelector('.desc').textContent = 'Click để chọn tọa độ';
+        }
     }
 
     function startRecording() {
@@ -223,7 +260,9 @@ document.addEventListener('DOMContentLoaded', () => {
             case 'coordsUpdated':
                 if (data.coords && data.coords.tabId === currentTabId) {
                     updateCoordsDisplay(data.coords);
-                    updateTabState({ coords: data.coords });
+                    updateTabState({ coords: data.coords, isPicking: false });
+                    resetSelectionButton();
+                    console.log(`Tab ${currentTabId}: Coordinates updated:`, data.coords);
                 }
                 break;
                 
@@ -245,6 +284,24 @@ document.addEventListener('DOMContentLoaded', () => {
                     loadTabState(data.state);
                 }
                 break;
+                
+            case 'pickingCanceled':
+                if (data.tabId === currentTabId) {
+                    updateTabState({ isPicking: false });
+                    resetSelectionButton();
+                }
+                break;
+                
+            case 'locationInfoResponse':
+                // Handle location info for cookie tab
+                if (data.hostname && data.href) {
+                    const currentDomainInput = document.getElementById('currentDomain');
+                    const currentUrlInput = document.getElementById('currentUrl');
+                    
+                    if (currentDomainInput) currentDomainInput.value = data.hostname;
+                    if (currentUrlInput) currentUrlInput.value = data.href;
+                }
+                break;
         }
     });
 
@@ -256,7 +313,8 @@ document.addEventListener('DOMContentLoaded', () => {
             case 'coordsUpdated':
                 if (data.coords && data.coords.tabId === currentTabId) {
                     updateCoordsDisplay(data.coords);
-                    updateTabState({ coords: data.coords });
+                    updateTabState({ coords: data.coords, isPicking: false });
+                    resetSelectionButton();
                 }
                 break;
         }
@@ -275,10 +333,10 @@ document.addEventListener('DOMContentLoaded', () => {
             coordsDisplay.style.display = 'block';
         }
 
-        // Reset selection button
-        if (startSelectionBtn) {
-            startSelectionBtn.classList.remove('btn-secondary');
-            startSelectionBtn.querySelector('.title').textContent = 'Chọn vị trí';
+        // Reset selection button if picking was in progress
+        if (tabState.isPicking) {
+            resetSelectionButton();
+            updateTabState({ isPicking: false });
         }
 
         showAlert(`Tab ${currentTabId}: Đã chọn tọa độ (${coords.x}, ${coords.y})`, 'success');
@@ -289,13 +347,19 @@ document.addEventListener('DOMContentLoaded', () => {
             if (isRunning) {
                 startClickingBtn.classList.add('btn-secondary');
                 startClickingBtn.querySelector('.title').textContent = 'Đang chạy...';
+                startClickingBtn.disabled = true;
+                
                 stopClickingBtn.classList.remove('btn-secondary');
                 stopClickingBtn.classList.add('btn-danger');
+                stopClickingBtn.disabled = false;
             } else {
                 startClickingBtn.classList.remove('btn-secondary');
                 startClickingBtn.querySelector('.title').textContent = 'Bắt đầu';
+                startClickingBtn.disabled = false;
+                
                 stopClickingBtn.classList.remove('btn-danger');
                 stopClickingBtn.classList.add('btn-secondary');
+                stopClickingBtn.disabled = true;
             }
         }
     }

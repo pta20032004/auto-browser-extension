@@ -39,7 +39,31 @@ function createSidebar() {
     
     document.body.appendChild(sidebarFrame);
     
+    // Create close button
+    createCloseButton();
+    
     console.log(`Sidebar created for tab: ${getCurrentTabId()}`);
+}
+
+function createCloseButton() {
+    // Remove existing close button
+    const existingButton = document.getElementById('automation-close-btn');
+    if (existingButton) {
+        existingButton.remove();
+    }
+
+    const closeButton = document.createElement('button');
+    closeButton.id = 'automation-close-btn';
+    closeButton.className = 'sidebar-close-button';
+    closeButton.innerHTML = '×';
+    closeButton.title = 'Đóng Automation Sidebar';
+    closeButton.style.display = 'none'; // Initially hidden
+    
+    closeButton.addEventListener('click', () => {
+        hideSidebar();
+    });
+    
+    document.body.appendChild(closeButton);
 }
 
 function showSidebar() {
@@ -48,6 +72,12 @@ function showSidebar() {
     }
     sidebarFrame.classList.add('visible');
     document.body.classList.add('automation-sidebar-open');
+    
+    // Show close button
+    const closeButton = document.getElementById('automation-close-btn');
+    if (closeButton) {
+        closeButton.style.display = 'flex';
+    }
     
     // Load tab-specific state into sidebar
     setTimeout(() => {
@@ -61,6 +91,13 @@ function hideSidebar() {
     if (sidebarFrame) {
         sidebarFrame.classList.remove('visible');
         document.body.classList.remove('automation-sidebar-open');
+        
+        // Hide close button
+        const closeButton = document.getElementById('automation-close-btn');
+        if (closeButton) {
+            closeButton.style.display = 'none';
+        }
+        
         console.log(`Sidebar hidden for tab: ${getCurrentTabId()}`);
     }
 }
@@ -115,6 +152,9 @@ window.addEventListener('message', (event) => {
         case 'startPicking':
             startLocationPicking();
             break;
+        case 'cancelPicking':
+            cancelLocationPicking();
+            break;
         case 'startRecording':
             startRecording();
             break;
@@ -124,6 +164,12 @@ window.addEventListener('message', (event) => {
             break;
         case 'getTabId':
             sendMessageToSidebar('tabIdResponse', { tabId });
+            break;
+        case 'getLocationInfo':
+            sendMessageToSidebar('locationInfoResponse', { 
+                hostname: window.location.hostname,
+                href: window.location.href
+            });
             break;
         default:
             console.log('Unknown sidebar message:', event.data);
@@ -220,6 +266,30 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 sendResponse({ success: true, result: analysis, tabId: getCurrentTabId() });
                 break;
                 
+            // Cookie operations
+            case "getAllCookies":
+                const cookies = getAllCookiesFromDocument();
+                sendResponse({ success: true, cookies: cookies, tabId: getCurrentTabId() });
+                break;
+                
+            case "setCookies":
+                try {
+                    applyCookiesToDocument(request.cookies);
+                    sendResponse({ success: true, message: "Cookies applied", tabId: getCurrentTabId() });
+                } catch (error) {
+                    sendResponse({ success: false, error: error.message, tabId: getCurrentTabId() });
+                }
+                break;
+                
+            case "clearCookies":
+                try {
+                    clearDocumentCookies();
+                    sendResponse({ success: true, message: "Cookies cleared", tabId: getCurrentTabId() });
+                } catch (error) {
+                    sendResponse({ success: false, error: error.message, tabId: getCurrentTabId() });
+                }
+                break;
+                
             default:
                 sendResponse({ success: false, error: "Unknown action", tabId: getCurrentTabId() });
         }
@@ -243,10 +313,51 @@ function startLocationPicking() {
     isPickingLocation = true;
     document.body.style.cursor = 'crosshair';
     
+    // Hide sidebar temporarily during picking - use CSS class instead
+    if (sidebarFrame) {
+        sidebarFrame.classList.add('picking-coords');
+    }
+    
     const overlay = createPickingOverlay();
     document.body.appendChild(overlay);
     
     document.addEventListener('click', handleLocationPick, true);
+    document.addEventListener('keydown', handleLocationPickingKeydown, true);
+}
+
+function cancelLocationPicking() {
+    if (!isPickingLocation) return;
+    
+    isPickingLocation = false;
+    document.body.style.cursor = 'default';
+    document.removeEventListener('click', handleLocationPick, true);
+    document.removeEventListener('keydown', handleLocationPickingKeydown, true);
+    
+    // Restore sidebar visibility
+    if (sidebarFrame) {
+        sidebarFrame.classList.remove('picking-coords');
+    }
+    
+    // Remove overlay and instruction
+    const overlay = document.getElementById('automation-overlay');
+    if (overlay) overlay.remove();
+    
+    const instruction = document.querySelector('[data-automation-instruction]');
+    if (instruction) instruction.remove();
+    
+    // Notify sidebar that picking was canceled
+    sendMessageToSidebar('pickingCanceled', {
+        tabId: getCurrentTabId()
+    });
+    
+    console.log(`Location picking canceled for tab ${getCurrentTabId()}`);
+}
+
+function handleLocationPickingKeydown(event) {
+    if (event.key === 'Escape') {
+        event.preventDefault();
+        cancelLocationPicking();
+    }
 }
 
 function handleLocationPick(event) {
@@ -283,6 +394,12 @@ function handleLocationPick(event) {
     isPickingLocation = false;
     document.body.style.cursor = 'default';
     document.removeEventListener('click', handleLocationPick, true);
+    document.removeEventListener('keydown', handleLocationPickingKeydown, true);
+    
+    // Restore sidebar visibility
+    if (sidebarFrame) {
+        sidebarFrame.classList.remove('picking-coords');
+    }
     
     const overlay = document.getElementById('automation-overlay');
     if (overlay) overlay.remove();
@@ -313,6 +430,7 @@ function createPickingOverlay() {
     `;
     
     const instruction = document.createElement('div');
+    instruction.setAttribute('data-automation-instruction', 'true');
     instruction.style.cssText = `
         position: fixed; 
         top: 20px; 
@@ -329,7 +447,7 @@ function createPickingOverlay() {
         pointer-events: none; 
         box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
     `;
-    instruction.textContent = `🎯 Tab ${getCurrentTabId()}: Click để thiết lập vị trí auto-click`;
+    instruction.textContent = `🎯 Tab ${getCurrentTabId()}: Click để thiết lập vị trí auto-click (ESC để hủy)`;
     
     document.body.appendChild(instruction);
     
@@ -341,6 +459,11 @@ function createPickingOverlay() {
             isPickingLocation = false;
             document.body.style.cursor = 'default';
             document.removeEventListener('click', handleLocationPick, true);
+            document.removeEventListener('keydown', handleLocationPickingKeydown, true);
+            // Restore sidebar
+            if (sidebarFrame) {
+                sidebarFrame.classList.remove('picking-coords');
+            }
         }
     }, 10000);
     
@@ -497,7 +620,7 @@ function recordKeydown(event) {
 }
 
 // ====================================================================
-// AUTOMATION STEP EXECUTION (SAME AS BEFORE BUT WITH TAB LOGGING)
+// AUTOMATION STEP EXECUTION - FIXED WITH ALL FUNCTIONS
 // ====================================================================
 
 async function executeAutomationStep(step) {
@@ -537,7 +660,9 @@ async function executeAutomationStep(step) {
     }
 }
 
-// [Keep all the existing step execution functions from the original content.js but add tab logging]
+// ====================================================================
+// STEP EXECUTION FUNCTIONS - ALL IMPLEMENTED
+// ====================================================================
 
 async function executeClickStep(step) {
     const x = parseInt(step.x);
@@ -564,8 +689,6 @@ async function executeClickElementStep(step) {
     
     return { selector: step.selector, clicked: true, x, y, tabId: getCurrentTabId() };
 }
-
-// [Continue with all other step execution functions... for brevity I'll include just a few key ones]
 
 async function executeTypeStep(step) {
     const element = await waitForSelector(step.selector, step.timeout || 5000);
@@ -600,6 +723,131 @@ async function executeTypeStep(step) {
     return { selector: step.selector, text: text, tabId: getCurrentTabId() };
 }
 
+async function executeWaitStep(step) {
+    const duration = parseInt(step.duration) || 1000;
+    await sleep(duration);
+    return { waited: duration, tabId: getCurrentTabId() };
+}
+
+async function executeScrollStep(step) {
+    const x = parseInt(step.x) || 0;
+    const y = parseInt(step.y) || 0;
+    const smooth = step.smooth !== false;
+    
+    if (smooth) {
+        window.scrollTo({ left: x, top: y, behavior: 'smooth' });
+    } else {
+        window.scrollTo(x, y);
+    }
+    
+    return { scrolled: true, x, y, smooth, tabId: getCurrentTabId() };
+}
+
+async function executeHoverStep(step) {
+    const element = await waitForSelector(step.selector, step.timeout || 5000);
+    
+    const rect = element.getBoundingClientRect();
+    const x = rect.left + rect.width / 2;
+    const y = rect.top + rect.height / 2;
+    
+    const hoverEvent = new MouseEvent('mouseenter', {
+        view: window, bubbles: true, cancelable: true, clientX: x, clientY: y
+    });
+    
+    element.dispatchEvent(hoverEvent);
+    
+    return { selector: step.selector, hovered: true, x, y, tabId: getCurrentTabId() };
+}
+
+async function executePressStep(step) {
+    const key = step.key;
+    const modifiers = step.modifiers || [];
+    
+    const keyEvent = new KeyboardEvent('keydown', {
+        key: key,
+        code: key,
+        ctrlKey: modifiers.includes('ctrl'),
+        shiftKey: modifiers.includes('shift'),
+        altKey: modifiers.includes('alt'),
+        metaKey: modifiers.includes('meta'),
+        bubbles: true
+    });
+    
+    document.dispatchEvent(keyEvent);
+    
+    // Also dispatch keyup
+    const keyUpEvent = new KeyboardEvent('keyup', {
+        key: key,
+        code: key,
+        ctrlKey: modifiers.includes('ctrl'),
+        shiftKey: modifiers.includes('shift'),
+        altKey: modifiers.includes('alt'),
+        metaKey: modifiers.includes('meta'),
+        bubbles: true
+    });
+    
+    document.dispatchEvent(keyUpEvent);
+    
+    return { key, modifiers, pressed: true, tabId: getCurrentTabId() };
+}
+
+async function executeGotoStep(step) {
+    const url = step.url;
+    window.location.href = url;
+    return { url, navigated: true, tabId: getCurrentTabId() };
+}
+
+async function executeSelectOptionStep(step) {
+    const selectElement = await waitForSelector(step.selector, step.timeout || 5000);
+    const value = step.value;
+    
+    selectElement.value = value;
+    selectElement.dispatchEvent(new Event('change', { bubbles: true }));
+    
+    return { selector: step.selector, value, selected: true, tabId: getCurrentTabId() };
+}
+
+async function executeCheckStep(step) {
+    const element = await waitForSelector(step.selector, step.timeout || 5000);
+    const checked = step.checked !== false;
+    
+    element.checked = checked;
+    element.dispatchEvent(new Event('change', { bubbles: true }));
+    
+    return { selector: step.selector, checked, tabId: getCurrentTabId() };
+}
+
+async function executeGetTextStep(step) {
+    const element = await waitForSelector(step.selector, step.timeout || 5000);
+    const text = element.textContent || element.value;
+    
+    return { selector: step.selector, text, tabId: getCurrentTabId() };
+}
+
+async function executeGetAttributeStep(step) {
+    const element = await waitForSelector(step.selector, step.timeout || 5000);
+    const attribute = step.attribute;
+    const value = element.getAttribute(attribute);
+    
+    return { selector: step.selector, attribute, value, tabId: getCurrentTabId() };
+}
+
+async function executeWaitForElementStep(step) {
+    const element = await waitForSelector(step.selector, step.timeout || 30000);
+    
+    if (step.visible !== false) {
+        // Wait for element to be visible
+        await waitForVisible(element, step.timeout || 30000);
+    }
+    
+    return { selector: step.selector, found: true, tabId: getCurrentTabId() };
+}
+
+async function executeReloadStep(step) {
+    window.location.reload();
+    return { reloaded: true, tabId: getCurrentTabId() };
+}
+
 // ====================================================================
 // UTILITY FUNCTIONS (ENHANCED WITH TAB LOGGING)
 // ====================================================================
@@ -628,6 +876,33 @@ function waitForSelector(selector, timeout = 5000) {
         setTimeout(() => {
             observer.disconnect();
             reject(new Error(`Tab ${getCurrentTabId()}: Element ${selector} không tìm thấy trong ${timeout}ms`));
+        }, timeout);
+    });
+}
+
+function waitForVisible(element, timeout = 5000) {
+    return new Promise((resolve, reject) => {
+        if (element.offsetParent !== null) {
+            resolve(element);
+            return;
+        }
+        
+        const observer = new MutationObserver((mutations, obs) => {
+            if (element.offsetParent !== null) {
+                obs.disconnect();
+                resolve(element);
+            }
+        });
+        
+        observer.observe(document.body, { 
+            attributes: true,
+            childList: true, 
+            subtree: true 
+        });
+        
+        setTimeout(() => {
+            observer.disconnect();
+            reject(new Error(`Tab ${getCurrentTabId()}: Element không hiển thị trong ${timeout}ms`));
         }, timeout);
     });
 }
@@ -683,6 +958,69 @@ function analyzePage() {
         formElements: document.querySelectorAll('form').length,
         tabId: getCurrentTabId()
     };
+}
+
+// ====================================================================
+// COOKIE HELPER FUNCTIONS
+// ====================================================================
+
+function getAllCookiesFromDocument() {
+    const cookies = [];
+    const cookieString = document.cookie;
+    
+    if (cookieString) {
+        const cookiePairs = cookieString.split(';');
+        cookiePairs.forEach(pair => {
+            const [name, value] = pair.trim().split('=');
+            if (name && value) {
+                cookies.push({
+                    name: name,
+                    value: decodeURIComponent(value),
+                    domain: window.location.hostname,
+                    path: '/',
+                    secure: window.location.protocol === 'https:',
+                    httpOnly: false,
+                    sameSite: 'Lax'
+                });
+            }
+        });
+    }
+    
+    return cookies;
+}
+
+function applyCookiesToDocument(cookies) {
+    cookies.forEach(cookie => {
+        if (!cookie.httpOnly) { // Can only set non-httpOnly cookies via document.cookie
+            let cookieString = `${cookie.name}=${encodeURIComponent(cookie.value)}`;
+            
+            if (cookie.path) cookieString += `; Path=${cookie.path}`;
+            if (cookie.domain) cookieString += `; Domain=${cookie.domain}`;
+            if (cookie.secure) cookieString += `; Secure`;
+            if (cookie.sameSite) cookieString += `; SameSite=${cookie.sameSite}`;
+            
+            if (cookie.expirationDate) {
+                const expireDate = new Date(cookie.expirationDate * 1000);
+                cookieString += `; Expires=${expireDate.toUTCString()}`;
+            }
+
+            document.cookie = cookieString;
+        }
+    });
+}
+
+function clearDocumentCookies() {
+    const cookies = document.cookie.split(';');
+    cookies.forEach(cookie => {
+        const eqPos = cookie.indexOf('=');
+        const name = eqPos > -1 ? cookie.substr(0, eqPos).trim() : cookie.trim();
+        if (name) {
+            // Set expiration date to past
+            document.cookie = `${name}=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT`;
+            document.cookie = `${name}=; Path=/; Domain=${window.location.hostname}; Expires=Thu, 01 Jan 1970 00:00:00 GMT`;
+            document.cookie = `${name}=; Path=/; Domain=.${window.location.hostname}; Expires=Thu, 01 Jan 1970 00:00:00 GMT`;
+        }
+    });
 }
 
 // ====================================================================

@@ -18,6 +18,7 @@
         <button class="nav-item active" data-page="automation">🎯 Auto</button>
         <button class="nav-item" data-page="scripts">📝 Script</button>
         <button class="nav-item" data-page="files">📁 Files</button>
+        <button class="nav-item" data-page="cookies">🍪 Cookie</button>
         <button class="nav-item" data-page="settings">⚙️ Settings</button>
     </nav>
 
@@ -119,6 +120,7 @@
                 <div class="upload-actions">
                     <button class="btn btn-primary btn-small" id="uploadFilesBtn">Chọn Files</button>
                     <button class="btn btn-secondary btn-small" id="uploadFolderBtn">Chọn Thư mục</button>
+                    <button class="btn btn-success btn-small" id="pasteImageBtn">📋 Dán Ảnh</button>
                 </div>
             </div>
 
@@ -144,6 +146,50 @@
 
             <!-- Hidden file input -->
             <input type="file" id="fileInput" style="display: none;" multiple>
+        </div>
+
+        <!-- Cookies Page -->
+        <div class="page" id="cookies">
+            <!-- Cookie Actions -->
+            <div class="file-upload-area">
+                <div class="upload-zone">
+                    <div class="upload-icon">🍪</div>
+                    <div class="upload-text">Quản lý Cookies</div>
+                    <div class="upload-subtext">Xuất/nhập cookies cho đăng nhập tự động</div>
+                </div>
+                <div class="upload-actions">
+                    <button class="btn btn-primary btn-small" id="exportCookiesBtn">📤 Xuất Cookies</button>
+                    <button class="btn btn-secondary btn-small" id="importCookiesBtn">📥 Nhập Cookies</button>
+                    <button class="btn btn-danger btn-small" id="clearAllCookiesBtn">🗑️ Xóa Cookies</button>
+                </div>
+            </div>
+
+            <!-- Cookie Info -->
+            <div class="current-task">
+                <div class="task-header">
+                    <div class="task-title">Thông tin hiện tại</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Domain hiện tại</label>
+                    <input type="text" id="currentDomain" class="form-control" readonly>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">URL hiện tại</label>
+                    <input type="text" id="currentUrl" class="form-control" readonly>
+                </div>
+            </div>
+
+            <!-- Saved Cookies List -->
+            <div class="file-list" id="cookiesList">
+                <div class="empty-state">
+                    <div class="icon">🍪</div>
+                    <div class="title">Chưa có cookies nào</div>
+                    <div class="desc">Xuất cookies để lưu trạng thái đăng nhập</div>
+                </div>
+            </div>
+
+            <!-- Hidden cookie file input -->
+            <input type="file" id="cookieFileInput" style="display: none;" accept=".json">
         </div>
 
         <!-- Settings Page -->
@@ -184,7 +230,7 @@
                 <h3>Về extension</h3>
                 <div class="setting-item">
                     <div class="setting-label">Phiên bản</div>
-                    <div class="setting-control">4.0</div>
+                    <div class="setting-control">4.1</div>
                 </div>
                 <div class="setting-item">
                     <div class="setting-label">Cập nhật cuối</div>
@@ -250,6 +296,7 @@
     <script src="../js/autoclicker.js"></script>
     <script src="../js/script-builder.js"></script>
     <script src="../js/file-manager.js"></script>
+    <script src="../js/cookie-manager.js"></script>
     <script src="../js/slidebar.js"></script>
 </body>
 </html>

@@ -1,13 +1,14 @@
 {
   "manifest_version": 3,
   "name": "Web Automation Suite",
-  "version": "4.0",
-  "description": "Automation tool with sidebar interface",
+  "version": "4.1",
+  "description": "Automation tool with sidebar interface, cookie management and clipboard support",
   "permissions": [
     "storage",
     "notifications",
     "scripting",
-    "activeTab"
+    "activeTab",
+    "cookies"
   ],
   "host_permissions": [
     "http://*/*",
@@ -41,6 +42,7 @@
         "js/autoclicker.js",
         "js/script-builder.js",
         "js/file-manager.js",
+        "js/cookie-manager.js",
         "js/slidebar.js"
       ],
       "matches": ["<all_urls>"]

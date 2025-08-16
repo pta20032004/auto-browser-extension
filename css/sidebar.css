@@ -9,12 +9,56 @@
     border: none;
     box-shadow: -2px 0 10px rgba(0, 0, 0, 0.15);
     transform: translateX(100%);
-    transition: transform 0.3s ease-in-out;
+    transition: transform 0.3s ease-in-out, opacity 0.3s ease-in-out;
     background-color: #f8fafc;
+    opacity: 1;
 }
 
 #automation-suite-sidebar.visible {
     transform: translateX(0);
+}
+
+/* Style khi đang chọn tọa độ */
+#automation-suite-sidebar.picking-coords {
+    opacity: 0.2;
+    pointer-events: none;
+    transition: opacity 0.2s ease-in-out;
+}
+
+/* Nút đóng sidebar - floating button */
+.sidebar-close-button {
+    position: fixed !important;
+    top: 20px !important;
+    right: 20px !important;
+    width: 32px !important;
+    height: 32px !important;
+    background: #ef4444 !important;
+    color: white !important;
+    border: none !important;
+    border-radius: 50% !important;
+    cursor: pointer !important;
+    font-size: 18px !important;
+    font-weight: bold !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3) !important;
+    z-index: 2147483648 !important; /* Cao hơn sidebar */
+    transition: all 0.2s ease !important;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+    line-height: 1 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+}
+
+.sidebar-close-button:hover {
+    background: #dc2626 !important;
+    transform: scale(1.1) !important;
+    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4) !important;
+}
+
+.sidebar-close-button:active {
+    transform: scale(0.95) !important;
 }
 
 /* Style cho body của trang web khi sidebar mở */
@@ -22,4 +66,114 @@ body.automation-sidebar-open {
     /* Hiệu ứng đẩy trang web sang trái */
     transition: margin-right 0.3s ease-in-out;
     margin-right: 380px !important;
+}
+
+/* Cookie file item styles */
+.cookie-file-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px;
+    margin-bottom: 8px;
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+}
+
+.cookie-file-item:hover {
+    border-color: #4f46e5;
+    box-shadow: 0 2px 8px rgba(79, 70, 229, 0.1);
+}
+
+/* Enhanced button styles for new features */
+.copy-btn {
+    background: #10b981 !important;
+    color: white !important;
+    border: none !important;
+    padding: 4px 8px !important;
+    font-size: 10px !important;
+    border-radius: 4px !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+}
+
+.copy-btn:hover {
+    background: #059669 !important;
+    transform: scale(1.05) !important;
+}
+
+/* Picking overlay enhancements */
+#automation-overlay {
+    backdrop-filter: blur(2px);
+    background: rgba(79, 70, 229, 0.08) !important;
+}
+
+/* Navigation improvements for more tabs */
+.nav {
+    display: flex;
+    background: white;
+    border-bottom: 1px solid #e2e8f0;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+.nav::-webkit-scrollbar {
+    display: none;
+}
+
+.nav-item {
+    flex: 1;
+    min-width: 60px;
+    padding: 8px 4px;
+    text-align: center;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 9px;
+    font-weight: 500;
+    color: #64748b;
+    transition: all 0.2s;
+    border-bottom: 2px solid transparent;
+    white-space: nowrap;
+}
+
+/* Alert animations for better UX */
+@keyframes slideInRight {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes slideOutRight {
+    from { transform: translateX(0); opacity: 1; }
+    to { transform: translateX(100%); opacity: 0; }
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+/* Enhanced action card states */
+.action-card.active {
+    border-color: #4f46e5;
+    background: #fafbfc;
+    box-shadow: 0 2px 8px rgba(79, 70, 229, 0.15);
+}
+
+.action-card.picking {
+    animation: pulse 2s infinite;
+    border-color: #f59e0b;
+    background: #fffbeb;
+}
+
+.action-card.running {
+    border-color: #10b981;
+    background: #f0fdf4;
+}
+
+.action-card.recording {
+    border-color: #ef4444;
+    background: #fef2f2;
 }

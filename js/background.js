@@ -131,6 +131,25 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     .catch(error => sendResponse({ success: false, error: error.message, tabId }));
                 return true;
                 
+            // Cookie operations
+            case "getAllCookies":
+                getAllCookiesForTab(tabId)
+                    .then(cookies => sendResponse({ success: true, cookies, tabId }))
+                    .catch(error => sendResponse({ success: false, error: error.message, tabId }));
+                return true;
+                
+            case "setCookies":
+                setCookiesForTab(tabId, request.cookies, request.url)
+                    .then(() => sendResponse({ success: true, message: "Cookies set", tabId }))
+                    .catch(error => sendResponse({ success: false, error: error.message, tabId }));
+                return true;
+                
+            case "clearCookies":
+                clearCookiesForTab(tabId, request.url)
+                    .then(() => sendResponse({ success: true, message: "Cookies cleared", tabId }))
+                    .catch(error => sendResponse({ success: false, error: error.message, tabId }));
+                return true;
+                
             // Coordinates update from specific tab
             case "updateCoords":
                 setTabCoords(tabId, request.coords);
@@ -350,6 +369,160 @@ async function getPageInfoForTab(tabId) {
 }
 
 // ====================================================================
+// COOKIE MANAGEMENT FOR SPECIFIC TAB
+// ====================================================================
+
+async function getAllCookiesForTab(tabId) {
+    try {
+        const tab = await new Promise((resolve, reject) => {
+            chrome.tabs.get(tabId, (tab) => {
+                if (chrome.runtime.lastError) {
+                    reject(new Error(chrome.runtime.lastError.message));
+                } else {
+                    resolve(tab);
+                }
+            });
+        });
+
+        if (!tab) {
+            throw new Error(`Tab ${tabId} không tồn tại`);
+        }
+
+        const url = new URL(tab.url);
+        const domain = url.hostname;
+
+        const cookies = await new Promise((resolve, reject) => {
+            chrome.cookies.getAll({ domain: domain }, (cookies) => {
+                if (chrome.runtime.lastError) {
+                    reject(new Error(chrome.runtime.lastError.message));
+                } else {
+                    resolve(cookies);
+                }
+            });
+        });
+
+        return cookies;
+    } catch (error) {
+        console.error('Failed to get cookies for tab:', tabId, error);
+        throw error;
+    }
+}
+
+async function setCookiesForTab(tabId, cookies, url) {
+    try {
+        const tab = await new Promise((resolve, reject) => {
+            chrome.tabs.get(tabId, (tab) => {
+                if (chrome.runtime.lastError) {
+                    reject(new Error(chrome.runtime.lastError.message));
+                } else {
+                    resolve(tab);
+                }
+            });
+        });
+
+        if (!tab) {
+            throw new Error(`Tab ${tabId} không tồn tại`);
+        }
+
+        const targetUrl = url || tab.url;
+        const targetDomain = new URL(targetUrl).hostname;
+
+        for (const cookie of cookies) {
+            try {
+                const cookieDetails = {
+                    url: targetUrl,
+                    name: cookie.name,
+                    value: cookie.value,
+                    domain: cookie.domain || targetDomain,
+                    path: cookie.path || '/',
+                    secure: cookie.secure || false,
+                    httpOnly: cookie.httpOnly || false,
+                    sameSite: cookie.sameSite || 'lax'
+                };
+
+                if (cookie.expirationDate) {
+                    cookieDetails.expirationDate = cookie.expirationDate;
+                }
+
+                await new Promise((resolve, reject) => {
+                    chrome.cookies.set(cookieDetails, (cookie) => {
+                        if (chrome.runtime.lastError) {
+                            console.warn('Failed to set cookie:', cookie?.name, chrome.runtime.lastError.message);
+                            resolve(); // Continue with other cookies
+                        } else {
+                            resolve(cookie);
+                        }
+                    });
+                });
+            } catch (error) {
+                console.warn('Error setting cookie:', cookie.name, error);
+            }
+        }
+
+        console.log(`Cookies applied for tab ${tabId}`);
+    } catch (error) {
+        console.error('Failed to set cookies for tab:', tabId, error);
+        throw error;
+    }
+}
+
+async function clearCookiesForTab(tabId, url) {
+    try {
+        const tab = await new Promise((resolve, reject) => {
+            chrome.tabs.get(tabId, (tab) => {
+                if (chrome.runtime.lastError) {
+                    reject(new Error(chrome.runtime.lastError.message));
+                } else {
+                    resolve(tab);
+                }
+            });
+        });
+
+        if (!tab) {
+            throw new Error(`Tab ${tabId} không tồn tại`);
+        }
+
+        const targetUrl = url || tab.url;
+        const targetDomain = new URL(targetUrl).hostname;
+
+        // Get all cookies for this domain
+        const cookies = await new Promise((resolve, reject) => {
+            chrome.cookies.getAll({ domain: targetDomain }, (cookies) => {
+                if (chrome.runtime.lastError) {
+                    reject(new Error(chrome.runtime.lastError.message));
+                } else {
+                    resolve(cookies);
+                }
+            });
+        });
+
+        // Remove each cookie
+        for (const cookie of cookies) {
+            try {
+                await new Promise((resolve, reject) => {
+                    chrome.cookies.remove({
+                        url: targetUrl,
+                        name: cookie.name
+                    }, (details) => {
+                        if (chrome.runtime.lastError) {
+                            console.warn('Failed to remove cookie:', cookie.name, chrome.runtime.lastError.message);
+                        }
+                        resolve();
+                    });
+                });
+            } catch (error) {
+                console.warn('Error removing cookie:', cookie.name, error);
+            }
+        }
+
+        console.log(`Cookies cleared for tab ${tabId}`);
+    } catch (error) {
+        console.error('Failed to clear cookies for tab:', tabId, error);
+        throw error;
+    }
+}
+
+// ====================================================================
 // UTILITY FUNCTIONS
 // ====================================================================
 function injectContentScript(tabId, callback) {
@@ -457,4 +630,4 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     }
 });
 
-console.log('Enhanced Background script loaded with tab independence');
+console.log('Enhanced Background script loaded with tab independence and cookie management');
