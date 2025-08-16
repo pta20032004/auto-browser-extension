@@ -1,14 +1,50 @@
-// Web Automation Suite - Background Script
-let clickInterval = null;
-let isRunning = false;
-let clickCount = 0;
-let maxClicks = 100;
+// Enhanced Web Automation Suite - Background Script with Tab Independence
+let clickIntervals = new Map(); // Map tabId -> interval
+let runningStates = new Map(); // Map tabId -> { isRunning, clickCount, maxClicks }
+let tabCoordinates = new Map(); // Map tabId -> { x, y }
 
 // ====================================================================
-// XỬ LÝ NHẤN VÀO EXTENSION ICON
+// TAB STATE MANAGEMENT
+// ====================================================================
+function getTabState(tabId) {
+    if (!runningStates.has(tabId)) {
+        runningStates.set(tabId, {
+            isRunning: false,
+            clickCount: 0,
+            maxClicks: 100
+        });
+    }
+    return runningStates.get(tabId);
+}
+
+function setTabState(tabId, state) {
+    runningStates.set(tabId, { ...getTabState(tabId), ...state });
+}
+
+function getTabCoords(tabId) {
+    return tabCoordinates.get(tabId) || null;
+}
+
+function setTabCoords(tabId, coords) {
+    tabCoordinates.set(tabId, coords);
+    // Also save to storage for persistence
+    chrome.storage.local.set({ [`coords_${tabId}`]: coords });
+}
+
+// Clean up when tab is closed
+chrome.tabs.onRemoved.addListener((tabId) => {
+    stopAutoClickForTab(tabId);
+    runningStates.delete(tabId);
+    tabCoordinates.delete(tabId);
+    chrome.storage.local.remove([`coords_${tabId}`]);
+    console.log(`Cleaned up state for closed tab: ${tabId}`);
+});
+
+// ====================================================================
+// EXTENSION ICON CLICK HANDLER
 // ====================================================================
 chrome.action.onClicked.addListener((tab) => {
-    // Kiểm tra URL trước khi inject - không inject vào trang hệ thống
+    // Check if URL is valid for injection
     if (tab.url.startsWith('chrome://') || 
         tab.url.startsWith('chrome-extension://') ||
         tab.url.startsWith('edge://') ||
@@ -20,23 +56,25 @@ chrome.action.onClicked.addListener((tab) => {
         return;
     }
 
-    // Gửi message đến content script để toggle sidebar
+    // Send message to content script to toggle sidebar
     chrome.tabs.sendMessage(tab.id, { 
-        action: "toggle_sidebar" 
+        action: "toggle_sidebar",
+        tabId: tab.id 
     }, (response) => {
         if (chrome.runtime.lastError) {
-            // Nếu content script chưa được inject, inject nó
+            // Content script not found, inject it
             console.log('Content script not found, injecting...');
             injectContentScript(tab.id, () => {
-                // Sau khi inject thành công, gửi lại message
+                // After injection, try again
                 setTimeout(() => {
                     chrome.tabs.sendMessage(tab.id, { 
-                        action: "toggle_sidebar" 
+                        action: "toggle_sidebar",
+                        tabId: tab.id 
                     });
                 }, 500);
             });
         } else {
-            console.log('Sidebar toggled:', response);
+            console.log('Sidebar toggled for tab:', tab.id, response);
         }
     });
 });
@@ -45,193 +83,216 @@ chrome.action.onClicked.addListener((tab) => {
 // MESSAGE LISTENER
 // ====================================================================
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    console.log('Background received:', request);
+    const tabId = sender.tab?.id || request.tabId;
+    console.log('Background received:', request, 'from tab:', tabId);
     
     try {
         switch (request.action) {
             case "start":
-                startAutoClick(request.interval, request.maxClicks);
-                sendResponse({ success: true, message: "Auto-click started" });
+                startAutoClickForTab(tabId, request.interval, request.maxClicks);
+                sendResponse({ success: true, message: "Auto-click started", tabId });
                 break;
                 
             case "stop":
-                stopAutoClick();
-                sendResponse({ success: true, message: "Auto-click stopped" });
+                stopAutoClickForTab(tabId);
+                sendResponse({ success: true, message: "Auto-click stopped", tabId });
+                break;
+                
+            case "getTabState":
+                const state = getTabState(tabId);
+                const coords = getTabCoords(tabId);
+                sendResponse({ 
+                    success: true, 
+                    state: { ...state, coords },
+                    tabId 
+                });
+                break;
+                
+            case "setTabCoords":
+                setTabCoords(tabId, request.coords);
+                sendResponse({ success: true, tabId });
                 break;
                 
             case "executeScript":
-                executeAutomationScript(request.script)
-                    .then(result => sendResponse({ success: true, result }))
-                    .catch(error => sendResponse({ success: false, error: error.message }));
+                executeAutomationScriptForTab(tabId, request.script)
+                    .then(result => sendResponse({ success: true, result, tabId }))
+                    .catch(error => sendResponse({ success: false, error: error.message, tabId }));
                 return true; // Async response
                 
             case "executeStep":
-                executeStep(request.step)
-                    .then(result => sendResponse({ success: true, result }))
-                    .catch(error => sendResponse({ success: false, error: error.message }));
+                executeStepForTab(tabId, request.step)
+                    .then(result => sendResponse({ success: true, result, tabId }))
+                    .catch(error => sendResponse({ success: false, error: error.message, tabId }));
                 return true; // Async response
                 
             case "getPageInfo":
-                getPageInfo()
-                    .then(result => sendResponse({ success: true, result }))
-                    .catch(error => sendResponse({ success: false, error: error.message }));
+                getPageInfoForTab(tabId)
+                    .then(result => sendResponse({ success: true, result, tabId }))
+                    .catch(error => sendResponse({ success: false, error: error.message, tabId }));
                 return true;
                 
-            // Chuyển tiếp message cập nhật tọa độ đến tất cả các tab
+            // Coordinates update from specific tab
             case "updateCoords":
-                // Broadcast đến tất cả tabs đang mở extension
-                chrome.tabs.query({}, (tabs) => {
-                    tabs.forEach(tab => {
-                        chrome.tabs.sendMessage(tab.id, {
-                            action: "coordsUpdated",
-                            coords: request.coords
-                        }, () => {
-                            // Ignore errors for tabs without content script
-                            if (chrome.runtime.lastError) {
-                                console.log('Tab không có content script:', tab.id);
-                            }
-                        });
-                    });
+                setTabCoords(tabId, request.coords);
+                // Only notify the same tab (no broadcast)
+                chrome.tabs.sendMessage(tabId, {
+                    action: "coordsUpdated",
+                    coords: request.coords,
+                    tabId: tabId
+                }, () => {
+                    if (chrome.runtime.lastError) {
+                        console.log('Could not notify tab:', tabId);
+                    }
                 });
-                sendResponse({ success: true });
+                sendResponse({ success: true, tabId });
                 break;
                 
             default:
-                sendResponse({ success: false, error: "Unknown action" });
+                sendResponse({ success: false, error: "Unknown action", tabId });
         }
     } catch (error) {
         console.error('Background error:', error);
-        sendResponse({ success: false, error: error.message });
+        sendResponse({ success: false, error: error.message, tabId });
     }
     
     return true;
 });
 
 // ====================================================================
-// AUTO-CLICK FUNCTIONS
+// TAB-SPECIFIC AUTO-CLICK FUNCTIONS
 // ====================================================================
-function startAutoClick(interval, maxClicksCount = 100) {
-    if (clickInterval) {
-        clearInterval(clickInterval);
+function startAutoClickForTab(tabId, interval, maxClicksCount = 100) {
+    if (clickIntervals.has(tabId)) {
+        clearInterval(clickIntervals.get(tabId));
     }
     
-    if (isRunning) {
-        console.log("Auto-click already running");
+    const state = getTabState(tabId);
+    if (state.isRunning) {
+        console.log(`Auto-click already running for tab: ${tabId}`);
         return;
     }
     
-    chrome.storage.local.get(['coords'], (result) => {
-        if (!result.coords) {
-            showNotification('Lỗi', 'Chưa có tọa độ. Vui lòng chọn vị trí trước.');
+    const coords = getTabCoords(tabId);
+    if (!coords) {
+        showNotification('Lỗi', `Tab ${tabId}: Chưa có tọa độ. Vui lòng chọn vị trí trước.`);
+        return;
+    }
+    
+    const { x, y } = coords;
+    setTabState(tabId, {
+        isRunning: true,
+        clickCount: 0,
+        maxClicks: maxClicksCount
+    });
+    
+    const intervalId = setInterval(() => {
+        const currentState = getTabState(tabId);
+        
+        if (currentState.clickCount >= currentState.maxClicks) {
+            stopAutoClickForTab(tabId);
+            showNotification('Hoàn tất Auto-Click', `Tab ${tabId}: Đã thực hiện ${currentState.clickCount} clicks`);
             return;
         }
         
-        const { x, y } = result.coords;
-        isRunning = true;
-        clickCount = 0;
-        maxClicks = maxClicksCount;
-        
-        clickInterval = setInterval(() => {
-            if (clickCount >= maxClicks) {
-                stopAutoClick();
-                showNotification('Hoàn tất Auto-Click', `Đã thực hiện ${clickCount} clicks`);
+        // Check if tab still exists
+        chrome.tabs.get(tabId, (tab) => {
+            if (chrome.runtime.lastError || !tab) {
+                stopAutoClickForTab(tabId);
                 return;
             }
             
-            chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-                if (tabs.length === 0) {
-                    stopAutoClick();
+            if (tab.url.startsWith('chrome://') || 
+                tab.url.startsWith('chrome-extension://') ||
+                tab.url.startsWith('edge://') ||
+                tab.url.startsWith('about:')) {
+                stopAutoClickForTab(tabId);
+                showNotification('Lỗi', `Tab ${tabId}: Không thể click trên các trang hệ thống.`);
+                return;
+            }
+            
+            chrome.tabs.sendMessage(tabId, { 
+                action: "executeClick", 
+                x, 
+                y,
+                tabId: tabId
+            }, (response) => {
+                if (chrome.runtime.lastError) {
+                    console.error(`Click error for tab ${tabId}:`, chrome.runtime.lastError.message);
+                    injectContentScript(tabId);
                     return;
                 }
                 
-                const tab = tabs[0];
-                
-                if (tab.url.startsWith('chrome://') || 
-                    tab.url.startsWith('chrome-extension://') ||
-                    tab.url.startsWith('edge://') ||
-                    tab.url.startsWith('about:')) {
-                    stopAutoClick();
-                    showNotification('Lỗi', 'Không thể click trên các trang hệ thống.');
-                    return;
+                if (response?.success) {
+                    const newState = getTabState(tabId);
+                    setTabState(tabId, { clickCount: newState.clickCount + 1 });
+                    console.log(`Tab ${tabId}: Click ${newState.clickCount + 1}/${newState.maxClicks}`);
                 }
-                
-                chrome.tabs.sendMessage(tab.id, { 
-                    action: "executeClick", 
-                    x, 
-                    y 
-                }, (response) => {
-                    if (chrome.runtime.lastError) {
-                        console.error("Lỗi Click:", chrome.runtime.lastError.message);
-                        injectContentScript(tab.id);
-                        return;
-                    }
-                    
-                    if (response?.success) {
-                        clickCount++;
-                        console.log(`Click ${clickCount}/${maxClicks} thành công`);
-                    }
-                });
             });
-        }, interval);
-        
-        console.log(`Bắt đầu Auto-click: delay ${interval}ms, tối đa ${maxClicks} clicks`);
-    });
+        });
+    }, interval);
+    
+    clickIntervals.set(tabId, intervalId);
+    console.log(`Started Auto-click for tab ${tabId}: delay ${interval}ms, max ${maxClicksCount} clicks`);
 }
 
-function stopAutoClick() {
-    if (clickInterval) {
-        clearInterval(clickInterval);
-        clickInterval = null;
+function stopAutoClickForTab(tabId) {
+    if (clickIntervals.has(tabId)) {
+        clearInterval(clickIntervals.get(tabId));
+        clickIntervals.delete(tabId);
     }
-    isRunning = false;
-    clickCount = 0;
-    console.log("Đã dừng Auto-click");
+    
+    setTabState(tabId, { 
+        isRunning: false, 
+        clickCount: 0 
+    });
+    
+    console.log(`Stopped Auto-click for tab: ${tabId}`);
 }
 
 // ====================================================================
-// SCRIPT EXECUTION
+// TAB-SPECIFIC SCRIPT EXECUTION
 // ====================================================================
-async function executeAutomationScript(script) {
+async function executeAutomationScriptForTab(tabId, script) {
     const steps = script.steps || script;
     const results = [];
     
     for (let i = 0; i < steps.length; i++) {
         const step = steps[i];
-        console.log(`Thực hiện bước ${i + 1}:`, step);
+        console.log(`Tab ${tabId}: Executing step ${i + 1}:`, step);
         
         try {
-            const result = await executeStep(step);
-            results.push({ step: i + 1, success: true, result });
+            const result = await executeStepForTab(tabId, step);
+            results.push({ step: i + 1, success: true, result, tabId });
             await sleep(500);
         } catch (error) {
-            console.error(`Bước ${i + 1} thất bại:`, error);
-            results.push({ step: i + 1, success: false, error: error.message });
+            console.error(`Tab ${tabId}: Step ${i + 1} failed:`, error);
+            results.push({ step: i + 1, success: false, error: error.message, tabId });
             throw error;
         }
     }
     
-    return { completed: true, results };
+    return { completed: true, results, tabId };
 }
 
-function executeStep(step) {
+function executeStepForTab(tabId, step) {
     return new Promise((resolve, reject) => {
-        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-            if (tabs.length === 0) {
-                reject(new Error('Không tìm thấy tab đang hoạt động'));
+        chrome.tabs.get(tabId, (tab) => {
+            if (chrome.runtime.lastError || !tab) {
+                reject(new Error(`Tab ${tabId} không tồn tại`));
                 return;
             }
             
-            const tab = tabs[0];
-            
-            chrome.tabs.sendMessage(tab.id, {
+            chrome.tabs.sendMessage(tabId, {
                 action: "executeStep",
-                step: step
+                step: step,
+                tabId: tabId
             }, (response) => {
                 if (chrome.runtime.lastError) {
-                    injectContentScript(tab.id, () => {
-                        chrome.tabs.sendMessage(tab.id, {
+                    injectContentScript(tabId, () => {
+                        chrome.tabs.sendMessage(tabId, {
                             action: "executeStep",
-                            step: step
+                            step: step,
+                            tabId: tabId
                         }, (retryResponse) => {
                             if (chrome.runtime.lastError) {
                                 reject(new Error(chrome.runtime.lastError.message));
@@ -241,7 +302,7 @@ function executeStep(step) {
                             if (retryResponse?.success) {
                                 resolve(retryResponse.result);
                             } else {
-                                reject(new Error(retryResponse?.error || 'Thực thi bước thất bại'));
+                                reject(new Error(retryResponse?.error || 'Step execution failed'));
                             }
                         });
                     });
@@ -251,7 +312,7 @@ function executeStep(step) {
                 if (response?.success) {
                     resolve(response.result);
                 } else {
-                    reject(new Error(response?.error || 'Thực thi bước thất bại'));
+                    reject(new Error(response?.error || 'Step execution failed'));
                 }
             });
         });
@@ -259,20 +320,19 @@ function executeStep(step) {
 }
 
 // ====================================================================
-// PAGE INFO
+// PAGE INFO FOR SPECIFIC TAB
 // ====================================================================
-async function getPageInfo() {
+async function getPageInfoForTab(tabId) {
     return new Promise((resolve, reject) => {
-        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-            if (tabs.length === 0) {
-                reject(new Error('Không có tab đang hoạt động'));
+        chrome.tabs.get(tabId, (tab) => {
+            if (chrome.runtime.lastError || !tab) {
+                reject(new Error(`Tab ${tabId} không tồn tại`));
                 return;
             }
             
-            const tab = tabs[0];
-            
-            chrome.tabs.sendMessage(tab.id, {
-                action: "getPageInfo"
+            chrome.tabs.sendMessage(tabId, {
+                action: "getPageInfo",
+                tabId: tabId
             }, (response) => {
                 if (chrome.runtime.lastError) {
                     reject(new Error(chrome.runtime.lastError.message));
@@ -280,9 +340,9 @@ async function getPageInfo() {
                 }
                 
                 if (response?.success) {
-                    resolve(response.result);
+                    resolve({ ...response.result, tabId });
                 } else {
-                    reject(new Error(response?.error || 'Lấy thông tin trang thất bại'));
+                    reject(new Error(response?.error || 'Failed to get page info'));
                 }
             });
         });
@@ -293,14 +353,13 @@ async function getPageInfo() {
 // UTILITY FUNCTIONS
 // ====================================================================
 function injectContentScript(tabId, callback) {
-    // Lấy thông tin tab để kiểm tra URL
     chrome.tabs.get(tabId, (tab) => {
         if (chrome.runtime.lastError) {
-            console.error("Không thể lấy thông tin tab:", chrome.runtime.lastError.message);
+            console.error("Cannot get tab info:", chrome.runtime.lastError.message);
             return;
         }
 
-        // Kiểm tra URL trước khi inject
+        // Check URL before injection
         if (tab.url.startsWith('chrome://') || 
             tab.url.startsWith('chrome-extension://') ||
             tab.url.startsWith('edge://') ||
@@ -311,15 +370,15 @@ function injectContentScript(tabId, callback) {
             return;
         }
 
-        // Tiến hành inject content script
+        // Inject content script
         chrome.scripting.executeScript({
             target: { tabId: tabId },
             files: ['js/content.js']
         }, () => {
             if (chrome.runtime.lastError) {
-                console.error("Tiêm content script thất bại:", chrome.runtime.lastError.message);
+                console.error("Content script injection failed:", chrome.runtime.lastError.message);
             } else {
-                console.log("Tiêm content script thành công");
+                console.log(`Content script injected successfully for tab: ${tabId}`);
                 if (callback) {
                     setTimeout(callback, 500);
                 }
@@ -336,7 +395,7 @@ function showNotification(title, message) {
         message: message
     }, (notificationId) => {
         if (chrome.runtime.lastError) {
-            console.error('Lỗi thông báo:', chrome.runtime.lastError.message);
+            console.error('Notification error:', chrome.runtime.lastError.message);
         }
     });
 }
@@ -346,14 +405,27 @@ function sleep(ms) {
 }
 
 // ====================================================================
-// EXTENSION LIFECYCLE
+// INITIALIZATION & CLEANUP
 // ====================================================================
-chrome.runtime.onStartup.addListener(() => {
-    console.log('Web Automation Suite đã khởi động');
+
+// Restore tab states on startup
+chrome.runtime.onStartup.addListener(async () => {
+    console.log('Web Automation Suite started - restoring tab states');
+    
+    // Get all tabs and restore their coordinates
+    chrome.tabs.query({}, async (tabs) => {
+        for (const tab of tabs) {
+            const result = await chrome.storage.local.get([`coords_${tab.id}`]);
+            if (result[`coords_${tab.id}`]) {
+                setTabCoords(tab.id, result[`coords_${tab.id}`]);
+                console.log(`Restored coordinates for tab ${tab.id}`);
+            }
+        }
+    });
 });
 
 chrome.runtime.onInstalled.addListener((details) => {
-    console.log('Extension đã được cài đặt/cập nhật:', details.reason);
+    console.log('Extension installed/updated:', details.reason);
     
     if (details.reason === 'install') {
         showNotification(
@@ -364,8 +436,25 @@ chrome.runtime.onInstalled.addListener((details) => {
 });
 
 chrome.runtime.onSuspend.addListener(() => {
-    stopAutoClick();
-    console.log('Extension đã bị tạm ngưng');
+    // Stop all auto-click processes
+    for (const [tabId, intervalId] of clickIntervals.entries()) {
+        clearInterval(intervalId);
+    }
+    clickIntervals.clear();
+    console.log('Extension suspended - all auto-click stopped');
 });
 
-console.log('Background script đã được tải');
+// Handle tab updates (URL changes)
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    if (changeInfo.status === 'complete' && changeInfo.url) {
+        // Stop auto-click if tab navigated to system page
+        if (tab.url.startsWith('chrome://') || 
+            tab.url.startsWith('chrome-extension://') ||
+            tab.url.startsWith('edge://') ||
+            tab.url.startsWith('about:')) {
+            stopAutoClickForTab(tabId);
+        }
+    }
+});
+
+console.log('Enhanced Background script loaded with tab independence');

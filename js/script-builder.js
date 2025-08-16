@@ -1,13 +1,41 @@
-// Script Builder for Auto Clicker Extension
-class ScriptBuilder {
+// Enhanced Script Builder for Auto Clicker Extension - Tab Independent
+class EnhancedScriptBuilder {
     constructor() {
         this.steps = [];
         this.currentEditingStep = null;
-        this.isRunning = false;
-        this.runningStepIndex = -1;
+        this.runningStates = new Map(); // Map tabId -> { isRunning, stepIndex }
+        this.currentTabId = null;
         
         this.initializeEventListeners();
         this.loadStepParameters();
+        this.getCurrentTabId();
+    }
+
+    getCurrentTabId() {
+        // Request tab ID from parent
+        if (window.parent && window.parent !== window) {
+            window.parent.postMessage({
+                source: 'automation-sidebar',
+                action: 'getTabId'
+            }, '*');
+        }
+    }
+
+    getTabRunningState(tabId) {
+        if (!this.runningStates.has(tabId)) {
+            this.runningStates.set(tabId, {
+                isRunning: false,
+                stepIndex: -1
+            });
+        }
+        return this.runningStates.get(tabId);
+    }
+
+    setTabRunningState(tabId, state) {
+        this.runningStates.set(tabId, { 
+            ...this.getTabRunningState(tabId), 
+            ...state 
+        });
     }
 
     initializeEventListeners() {
@@ -72,6 +100,20 @@ class ScriptBuilder {
         window.addEventListener('click', (e) => {
             if (e.target.classList.contains('modal')) {
                 e.target.style.display = 'none';
+            }
+        });
+
+        // Listen for messages from parent
+        window.addEventListener('message', (event) => {
+            if (event.source !== window.parent) return;
+            
+            const { action, data } = event.data;
+            
+            switch (action) {
+                case 'tabIdResponse':
+                    this.currentTabId = data.tabId;
+                    console.log('Script Builder: Current tab ID set to:', this.currentTabId);
+                    break;
             }
         });
     }
@@ -212,7 +254,7 @@ class ScriptBuilder {
 
     confirmAddStep() {
         const stepType = document.getElementById('stepType').value;
-        const stepData = { type: stepType };
+        const stepData = { type: stepType, tabId: this.currentTabId };
 
         // Collect parameters
         const paramInputs = document.querySelectorAll('#stepParams [data-param-name]');
@@ -250,7 +292,7 @@ class ScriptBuilder {
         });
 
         if (!isValid) {
-            alert('Vui lòng điền đầy đủ thông tin bắt buộc.');
+            this.showAlert('Vui lòng điền đầy đủ thông tin bắt buộc.', 'error');
             return;
         }
 
@@ -297,7 +339,7 @@ class ScriptBuilder {
     }
 
     deleteStep(index) {
-        if (confirm('Bạn có chắc muốn xóa bước này?')) {
+        if (this.confirmSidebar('Bạn có chắc muốn xóa bước này?')) {
             this.steps.splice(index, 1);
             this.updateStepsDisplay();
         }
@@ -321,11 +363,17 @@ class ScriptBuilder {
             return;
         }
 
+        const tabState = this.getTabRunningState(this.currentTabId);
+
         this.steps.forEach((step, index) => {
             const stepElement = document.createElement('div');
             stepElement.className = 'script-step';
-            if (this.runningStepIndex === index && this.isRunning) {
+            
+            // Highlight currently running step for current tab
+            if (tabState.stepIndex === index && tabState.isRunning) {
                 stepElement.classList.add('script-running');
+                stepElement.style.background = '#e3f2fd';
+                stepElement.style.borderLeft = '4px solid #2196f3';
             }
 
             const stepHeader = document.createElement('div');
@@ -439,12 +487,13 @@ class ScriptBuilder {
     }
 
     clearScript() {
-        if (this.isRunning) {
-            alert('Không thể xóa khi đang chạy kịch bản.');
+        const tabState = this.getTabRunningState(this.currentTabId);
+        if (tabState.isRunning) {
+            this.showAlert('Không thể xóa khi đang chạy kịch bản.', 'warning');
             return;
         }
 
-        if (this.steps.length === 0 || confirm('Bạn có chắc muốn xóa toàn bộ kịch bản?')) {
+        if (this.steps.length === 0 || this.confirmSidebar('Bạn có chắc muốn xóa toàn bộ kịch bản?')) {
             this.steps = [];
             this.updateStepsDisplay();
         }
@@ -452,7 +501,7 @@ class ScriptBuilder {
 
     showSaveScriptModal() {
         if (this.steps.length === 0) {
-            alert('Không có bước nào để lưu.');
+            this.showAlert('Không có bước nào để lưu.', 'warning');
             return;
         }
 
@@ -468,18 +517,18 @@ class ScriptBuilder {
     async confirmSaveScript() {
         const name = document.getElementById('scriptName').value.trim();
         if (!name) {
-            alert('Vui lòng nhập tên kịch bản.');
+            this.showAlert('Vui lòng nhập tên kịch bản.', 'warning');
             return;
         }
 
         try {
             await window.dbHelper.saveScript(name, this.steps);
-            alert('Đã lưu kịch bản thành công!');
+            this.showAlert('Đã lưu kịch bản thành công!', 'success');
             this.loadSavedScripts();
             document.getElementById('scriptName').value = '';
         } catch (error) {
             console.error('Failed to save script:', error);
-            alert('Không thể lưu kịch bản. Vui lòng thử lại.');
+            this.showAlert('Không thể lưu kịch bản. Vui lòng thử lại.', 'error');
         }
     }
 
@@ -507,6 +556,12 @@ class ScriptBuilder {
                 nameDiv.className = 'saved-script-name';
                 nameDiv.textContent = script.name;
 
+                const metaDiv = document.createElement('div');
+                metaDiv.className = 'saved-script-meta';
+                metaDiv.style.fontSize = '10px';
+                metaDiv.style.color = '#666';
+                metaDiv.textContent = `${script.steps.length} bước • ${new Date(script.createdDate).toLocaleDateString('vi-VN')}`;
+
                 const controls = document.createElement('div');
                 controls.className = 'saved-script-controls';
 
@@ -521,7 +576,12 @@ class ScriptBuilder {
                 deleteBtn.onclick = () => this.deleteScript(script.id);
                 controls.appendChild(deleteBtn);
 
-                item.appendChild(nameDiv);
+                const itemContent = document.createElement('div');
+                itemContent.style.flex = '1';
+                itemContent.appendChild(nameDiv);
+                itemContent.appendChild(metaDiv);
+
+                item.appendChild(itemContent);
                 item.appendChild(controls);
                 container.appendChild(item);
             });
@@ -531,98 +591,104 @@ class ScriptBuilder {
     }
 
     loadScript(script) {
-        if (this.isRunning) {
-            alert('Không thể tải khi đang chạy kịch bản.');
+        const tabState = this.getTabRunningState(this.currentTabId);
+        if (tabState.isRunning) {
+            this.showAlert('Không thể tải khi đang chạy kịch bản.', 'warning');
             return;
         }
 
-        if (this.steps.length > 0 && !confirm('Bạn có chắc muốn thay thế kịch bản hiện tại?')) {
+        if (this.steps.length > 0 && !this.confirmSidebar('Bạn có chắc muốn thay thế kịch bản hiện tại?')) {
             return;
         }
 
         this.steps = [...script.steps];
         this.updateStepsDisplay();
         this.hideScriptManagerModal();
-        alert(`Đã tải kịch bản "${script.name}" thành công!`);
+        this.showAlert(`Đã tải kịch bản "${script.name}" thành công!`, 'success');
     }
 
     async deleteScript(scriptId) {
-        if (confirm('Bạn có chắc muốn xóa kịch bản này?')) {
+        if (this.confirmSidebar('Bạn có chắc muốn xóa kịch bản này?')) {
             try {
                 await window.dbHelper.deleteScript(scriptId);
                 this.loadSavedScripts();
+                this.showAlert('Đã xóa kịch bản thành công!', 'success');
             } catch (error) {
                 console.error('Failed to delete script:', error);
-                alert('Không thể xóa kịch bản. Vui lòng thử lại.');
+                this.showAlert('Không thể xóa kịch bản. Vui lòng thử lại.', 'error');
             }
         }
     }
 
     async runScript() {
         if (this.steps.length === 0) {
-            alert('Không có bước nào để chạy.');
+            this.showAlert('Không có bước nào để chạy.', 'warning');
             return;
         }
 
-        if (this.isRunning) {
-            alert('Kịch bản đang chạy. Vui lòng đợi hoàn thành.');
+        if (!this.currentTabId) {
+            this.showAlert('Chưa xác định được tab. Vui lòng thử lại.', 'error');
             return;
         }
 
-        this.isRunning = true;
-        this.runningStepIndex = 0;
+        const tabState = this.getTabRunningState(this.currentTabId);
+        if (tabState.isRunning) {
+            this.showAlert('Kịch bản đang chạy. Vui lòng đợi hoàn thành.', 'warning');
+            return;
+        }
+
+        this.setTabRunningState(this.currentTabId, { 
+            isRunning: true, 
+            stepIndex: 0 
+        });
         this.updateStepsDisplay();
 
         try {
             for (let i = 0; i < this.steps.length; i++) {
-                this.runningStepIndex = i;
+                this.setTabRunningState(this.currentTabId, { stepIndex: i });
                 this.updateStepsDisplay();
 
                 const step = this.steps[i];
-                console.log(`Executing step ${i + 1}:`, step);
+                console.log(`Tab ${this.currentTabId}: Executing step ${i + 1}:`, step);
 
-                // Send step to content script
-                const result = await this.executeStep(step);
-                console.log(`Step ${i + 1} result:`, result);
+                // Send step to background with tab ID
+                const result = await this.executeStepForTab(step);
+                console.log(`Tab ${this.currentTabId}: Step ${i + 1} result:`, result);
 
                 // Small delay between steps
                 await this.sleep(500);
             }
 
-            alert('Kịch bản đã chạy xong thành công!');
+            this.showAlert(`Tab ${this.currentTabId}: Kịch bản đã chạy xong thành công!`, 'success');
         } catch (error) {
             console.error('Script execution failed:', error);
-            alert(`Lỗi khi chạy bước ${this.runningStepIndex + 1}: ${error.message}`);
+            this.showAlert(`Tab ${this.currentTabId}: Lỗi khi chạy bước ${tabState.stepIndex + 1}: ${error.message}`, 'error');
         } finally {
-            this.isRunning = false;
-            this.runningStepIndex = -1;
+            this.setTabRunningState(this.currentTabId, { 
+                isRunning: false, 
+                stepIndex: -1 
+            });
             this.updateStepsDisplay();
         }
     }
 
-    executeStep(step) {
+    executeStepForTab(step) {
         return new Promise((resolve, reject) => {
-            chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-                if (tabs.length === 0) {
-                    reject(new Error('Không tìm thấy tab active'));
+            chrome.runtime.sendMessage({
+                action: "executeStep",
+                step: step,
+                tabId: this.currentTabId
+            }, (response) => {
+                if (chrome.runtime.lastError) {
+                    reject(new Error(chrome.runtime.lastError.message));
                     return;
                 }
 
-                chrome.tabs.sendMessage(tabs[0].id, {
-                    action: "executeAutomationStep",
-                    step: step
-                }, (response) => {
-                    if (chrome.runtime.lastError) {
-                        reject(new Error(chrome.runtime.lastError.message));
-                        return;
-                    }
-
-                    if (response && response.success) {
-                        resolve(response.result);
-                    } else {
-                        reject(new Error(response?.message || "Step execution failed"));
-                    }
-                });
+                if (response && response.success) {
+                    resolve(response.result);
+                } else {
+                    reject(new Error(response?.error || "Step execution failed"));
+                }
             });
         });
     }
@@ -642,10 +708,25 @@ class ScriptBuilder {
             input.style.borderColor = '#ccc';
         });
     }
+
+    // Utility functions
+    showAlert(message, type = 'info') {
+        // Use the sidebar notification system
+        if (window.SidebarUtils && window.SidebarUtils.showNotification) {
+            window.SidebarUtils.showNotification(message, type);
+        } else {
+            console.log(`[${type.toUpperCase()}] ${message}`);
+        }
+    }
+
+    confirmSidebar(message) {
+        // Use simple confirm for now - could be enhanced with custom modal
+        return confirm(message);
+    }
 }
 
 // Initialize script builder when page loads
-let scriptBuilder;
+let enhancedScriptBuilder;
 document.addEventListener('DOMContentLoaded', () => {
-    scriptBuilder = new ScriptBuilder();
+    enhancedScriptBuilder = new EnhancedScriptBuilder();
 });

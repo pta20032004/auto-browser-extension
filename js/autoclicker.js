@@ -1,13 +1,37 @@
-// Auto Clicker for Sidebar UI
+// Enhanced Auto Clicker for Sidebar UI - Tab Independent
 document.addEventListener('DOMContentLoaded', () => {
     // Check if we're in the sidebar iframe
     if (window.self === window.top) {
         return; // Exit if not in sidebar
     }
 
-    console.log('Auto Clicker sidebar script loaded');
+    console.log('Enhanced Auto Clicker sidebar script loaded');
 
-    // Get DOM elements
+    // ====================================================================
+    // TAB STATE MANAGEMENT
+    // ====================================================================
+    
+    let currentTabId = null;
+    let tabState = {
+        coords: null,
+        isRunning: false,
+        isRecording: false,
+        clickCount: 0,
+        maxClicks: 100
+    };
+
+    // Get current tab ID from parent
+    function getCurrentTabId() {
+        if (!currentTabId) {
+            sendMessageToParent({ action: "getTabId" });
+        }
+        return currentTabId;
+    }
+
+    // ====================================================================
+    // DOM ELEMENTS
+    // ====================================================================
+    
     const startSelectionBtn = document.getElementById('startSelection');
     const startClickingBtn = document.getElementById('startClicking');
     const stopClickingBtn = document.getElementById('stopClicking');
@@ -18,10 +42,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const xCoordEl = document.getElementById('xCoord');
     const yCoordEl = document.getElementById('yCoord');
 
-    // State variables (độc lập cho mỗi tab)
-    let currentCoords = null;
-    let isRecording = false;
-
     // ====================================================================
     // EVENT LISTENERS
     // ====================================================================
@@ -29,37 +49,49 @@ document.addEventListener('DOMContentLoaded', () => {
     // Start location picking
     if (startSelectionBtn) {
         startSelectionBtn.addEventListener('click', () => {
-            // Send message to content script on parent page
-            sendMessageToParent({ action: "startPicking" });
-            
-            // Visual feedback
-            startSelectionBtn.classList.add('btn-secondary');
-            startSelectionBtn.querySelector('.title').textContent = 'Đang chọn...';
+            if (!currentTabId) {
+                showAlert('Đang khởi tạo tab...', 'warning');
+                getCurrentTabId();
+                setTimeout(() => {
+                    if (currentTabId) {
+                        startLocationPicking();
+                    }
+                }, 500);
+                return;
+            }
+            startLocationPicking();
         });
     }
 
-    // Start auto clicking
+    // Start auto clicking  
     if (startClickingBtn) {
         startClickingBtn.addEventListener('click', () => {
-            if (!currentCoords) {
-                showAlert('Vui lòng chọn vị trí trước khi bắt đầu.');
+            if (!currentTabId) {
+                showAlert('Chưa xác định được tab. Vui lòng thử lại.', 'error');
+                return;
+            }
+
+            if (!tabState.coords) {
+                showAlert('Vui lòng chọn vị trí trước khi bắt đầu.', 'warning');
                 return;
             }
 
             const delay = parseInt(delayInput?.value) || 1000;
             const maxClicks = parseInt(maxClicksInput?.value) || 100;
 
-            // Send to background script
+            // Send to background script with tab ID
             chrome.runtime.sendMessage({
                 action: "start",
                 interval: delay,
-                maxClicks: maxClicks
+                maxClicks: maxClicks,
+                tabId: currentTabId
             }, (response) => {
                 if (response?.success) {
                     updateClickingUI(true);
-                    showAlert('Auto-click đã bắt đầu!', 'success');
+                    showAlert(`Tab ${currentTabId}: Auto-click đã bắt đầu!`, 'success');
+                    updateTabState({ isRunning: true, clickCount: 0, maxClicks });
                 } else {
-                    showAlert('Không thể bắt đầu auto-click: ' + (response?.error || 'Unknown error'));
+                    showAlert('Không thể bắt đầu auto-click: ' + (response?.error || 'Unknown error'), 'error');
                 }
             });
         });
@@ -68,12 +100,21 @@ document.addEventListener('DOMContentLoaded', () => {
     // Stop auto clicking
     if (stopClickingBtn) {
         stopClickingBtn.addEventListener('click', () => {
-            chrome.runtime.sendMessage({ action: "stop" }, (response) => {
+            if (!currentTabId) {
+                showAlert('Chưa xác định được tab.', 'error');
+                return;
+            }
+
+            chrome.runtime.sendMessage({ 
+                action: "stop",
+                tabId: currentTabId 
+            }, (response) => {
                 if (response?.success) {
                     updateClickingUI(false);
-                    showAlert('Auto-click đã dừng!', 'success');
+                    showAlert(`Tab ${currentTabId}: Auto-click đã dừng!`, 'success');
+                    updateTabState({ isRunning: false, clickCount: 0 });
                 } else {
-                    showAlert('Không thể dừng auto-click: ' + (response?.error || 'Unknown error'));
+                    showAlert('Không thể dừng auto-click: ' + (response?.error || 'Unknown error'), 'error');
                 }
             });
         });
@@ -82,7 +123,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Record actions
     if (recordActionBtn) {
         recordActionBtn.addEventListener('click', () => {
-            if (!isRecording) {
+            if (!tabState.isRecording) {
                 startRecording();
             } else {
                 stopRecording();
@@ -91,31 +132,81 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ====================================================================
-    // RECORDING FUNCTIONS
+    // TAB-SPECIFIC FUNCTIONS
     // ====================================================================
 
+    function startLocationPicking() {
+        sendMessageToParent({ action: "startPicking" });
+        
+        // Visual feedback
+        if (startSelectionBtn) {
+            startSelectionBtn.classList.add('btn-secondary');
+            startSelectionBtn.querySelector('.title').textContent = 'Đang chọn...';
+        }
+        
+        showAlert(`Tab ${currentTabId}: Đang chờ chọn tọa độ...`, 'info');
+    }
+
     function startRecording() {
-        isRecording = true;
+        if (!currentTabId) {
+            showAlert('Chưa xác định được tab.', 'error');
+            return;
+        }
+
+        updateTabState({ isRecording: true });
         sendMessageToParent({ action: "startRecording" });
         
         // Update UI
-        recordActionBtn.classList.add('btn-danger');
-        recordActionBtn.querySelector('.title').textContent = 'Đang ghi...';
-        recordActionBtn.querySelector('.desc').textContent = 'Click để dừng';
+        if (recordActionBtn) {
+            recordActionBtn.classList.add('btn-danger');
+            recordActionBtn.querySelector('.title').textContent = 'Đang ghi...';
+            recordActionBtn.querySelector('.desc').textContent = 'Click để dừng';
+        }
         
-        showAlert('Đã bắt đầu ghi lại hành động!', 'success');
+        showAlert(`Tab ${currentTabId}: Đã bắt đầu ghi lại hành động!`, 'success');
     }
 
     function stopRecording() {
-        isRecording = false;
+        updateTabState({ isRecording: false });
         sendMessageToParent({ action: "stopRecording" });
         
         // Update UI
-        recordActionBtn.classList.remove('btn-danger');
-        recordActionBtn.querySelector('.title').textContent = 'Ghi lại';
-        recordActionBtn.querySelector('.desc').textContent = 'Record actions';
+        if (recordActionBtn) {
+            recordActionBtn.classList.remove('btn-danger');
+            recordActionBtn.querySelector('.title').textContent = 'Ghi lại';
+            recordActionBtn.querySelector('.desc').textContent = 'Record actions';
+        }
         
-        showAlert('Đã dừng ghi lại!', 'success');
+        showAlert(`Tab ${currentTabId}: Đã dừng ghi lại!`, 'success');
+    }
+
+    // ====================================================================
+    // STATE MANAGEMENT
+    // ====================================================================
+
+    function updateTabState(newState) {
+        tabState = { ...tabState, ...newState };
+        console.log(`Tab ${currentTabId} state updated:`, tabState);
+    }
+
+    function loadTabState(state) {
+        tabState = { ...tabState, ...state };
+        
+        // Update UI based on loaded state
+        if (state.coords) {
+            updateCoordsDisplay(state.coords);
+        }
+        
+        if (state.isRunning) {
+            updateClickingUI(true);
+        }
+
+        if (state.isRecording && recordActionBtn) {
+            recordActionBtn.classList.add('btn-danger');
+            recordActionBtn.querySelector('.title').textContent = 'Đang ghi...';
+        }
+        
+        console.log(`Tab ${currentTabId} state loaded:`, tabState);
     }
 
     // ====================================================================
@@ -130,33 +221,53 @@ document.addEventListener('DOMContentLoaded', () => {
         
         switch (action) {
             case 'coordsUpdated':
-                updateCoords(data.coords);
+                if (data.coords && data.coords.tabId === currentTabId) {
+                    updateCoordsDisplay(data.coords);
+                    updateTabState({ coords: data.coords });
+                }
                 break;
+                
             case 'recordingStopped':
-                if (isRecording) {
+                if (data.tabId === currentTabId && tabState.isRecording) {
                     stopRecording();
-                    // You could show recorded actions here
-                    console.log('Recorded actions:', data.actions);
+                    console.log(`Tab ${currentTabId} recorded actions:`, data.actions);
+                }
+                break;
+                
+            case 'tabIdResponse':
+                currentTabId = data.tabId;
+                console.log('Current tab ID set to:', currentTabId);
+                loadSavedState();
+                break;
+                
+            case 'tabStateLoaded':
+                if (data.tabId === currentTabId) {
+                    loadTabState(data.state);
+                }
+                break;
+        }
+    });
+
+    // Listen for custom events from sidebar communication
+    document.addEventListener('parentMessage', (event) => {
+        const { action, data } = event.detail;
+        
+        switch (action) {
+            case 'coordsUpdated':
+                if (data.coords && data.coords.tabId === currentTabId) {
+                    updateCoordsDisplay(data.coords);
+                    updateTabState({ coords: data.coords });
                 }
                 break;
         }
     });
 
     // ====================================================================
-    // UTILITY FUNCTIONS
+    // UI UPDATE FUNCTIONS
     // ====================================================================
 
-    function sendMessageToParent(message) {
-        if (window.parent && window.parent !== window) {
-            window.parent.postMessage({
-                source: 'automation-sidebar',
-                ...message
-            }, '*');
-        }
-    }
-
-    function updateCoords(coords) {
-        currentCoords = coords;
+    function updateCoordsDisplay(coords) {
+        tabState.coords = coords;
         
         if (xCoordEl && yCoordEl && coordsDisplay) {
             xCoordEl.textContent = coords.x;
@@ -170,19 +281,7 @@ document.addEventListener('DOMContentLoaded', () => {
             startSelectionBtn.querySelector('.title').textContent = 'Chọn vị trí';
         }
 
-        // Save coordinates to storage (per tab using tab ID)
-        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-            if (tabs.length > 0) {
-                const tabId = tabs[0].id;
-                const storageKey = `coords_${tabId}`;
-                chrome.storage.local.set({ [storageKey]: coords });
-                
-                // Also save global coords for backward compatibility
-                chrome.storage.local.set({ coords: coords });
-            }
-        });
-
-        showAlert('Đã chọn tọa độ: (' + coords.x + ', ' + coords.y + ')', 'success');
+        showAlert(`Tab ${currentTabId}: Đã chọn tọa độ (${coords.x}, ${coords.y})`, 'success');
     }
 
     function updateClickingUI(isRunning) {
@@ -201,8 +300,21 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // ====================================================================
+    // UTILITY FUNCTIONS
+    // ====================================================================
+
+    function sendMessageToParent(message) {
+        if (window.parent && window.parent !== window) {
+            window.parent.postMessage({
+                source: 'automation-sidebar',
+                ...message
+            }, '*');
+        }
+    }
+
     function showAlert(message, type = 'info') {
-        // Create a simple alert system for the sidebar
+        // Create enhanced alert system for the sidebar
         const alertDiv = document.createElement('div');
         alertDiv.className = `alert alert-${type}`;
         alertDiv.textContent = message;
@@ -210,52 +322,69 @@ document.addEventListener('DOMContentLoaded', () => {
             position: fixed;
             top: 10px;
             right: 10px;
-            background: ${type === 'success' ? '#d4edda' : type === 'error' ? '#f8d7da' : '#d1ecf1'};
-            color: ${type === 'success' ? '#155724' : type === 'error' ? '#721c24' : '#0c5460'};
-            border: 1px solid ${type === 'success' ? '#c3e6cb' : type === 'error' ? '#f5c6cb' : '#bee5eb'};
+            background: ${type === 'success' ? '#d4edda' : type === 'error' ? '#f8d7da' : type === 'warning' ? '#fff3cd' : '#d1ecf1'};
+            color: ${type === 'success' ? '#155724' : type === 'error' ? '#721c24' : type === 'warning' ? '#856404' : '#0c5460'};
+            border: 1px solid ${type === 'success' ? '#c3e6cb' : type === 'error' ? '#f5c6cb' : type === 'warning' ? '#ffeaa7' : '#bee5eb'};
             padding: 8px 12px;
             border-radius: 4px;
-            font-size: 12px;
+            font-size: 11px;
             z-index: 10000;
-            max-width: 300px;
+            max-width: 280px;
             word-wrap: break-word;
+            animation: slideInRight 0.3s ease;
         `;
+        
+        // Add animation CSS if not exists
+        if (!document.querySelector('#sidebar-alert-animations')) {
+            const style = document.createElement('style');
+            style.id = 'sidebar-alert-animations';
+            style.textContent = `
+                @keyframes slideInRight {
+                    from { transform: translateX(100%); opacity: 0; }
+                    to { transform: translateX(0); opacity: 1; }
+                }
+                @keyframes slideOutRight {
+                    from { transform: translateX(0); opacity: 1; }
+                    to { transform: translateX(100%); opacity: 0; }
+                }
+            `;
+            document.head.appendChild(style);
+        }
         
         document.body.appendChild(alertDiv);
         
-        // Auto remove after 3 seconds
+        // Auto remove after 4 seconds
         setTimeout(() => {
             if (alertDiv.parentNode) {
-                alertDiv.parentNode.removeChild(alertDiv);
-            }
-        }, 3000);
-    }
-
-    // ====================================================================
-    // INITIALIZATION
-    // ====================================================================
-
-    // Load saved coordinates for current tab
-    function loadSavedCoords() {
-        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-            if (tabs.length > 0) {
-                const tabId = tabs[0].id;
-                const storageKey = `coords_${tabId}`;
-                
-                chrome.storage.local.get([storageKey, 'coords'], (result) => {
-                    // Prefer tab-specific coords, fallback to global coords
-                    const coords = result[storageKey] || result.coords;
-                    if (coords) {
-                        updateCoords(coords);
+                alertDiv.style.animation = 'slideOutRight 0.3s ease';
+                setTimeout(() => {
+                    if (alertDiv.parentNode) {
+                        alertDiv.parentNode.removeChild(alertDiv);
                     }
-                });
+                }, 300);
             }
-        });
+        }, 4000);
     }
 
-    // Load settings
-    function loadSettings() {
-        chrome.storage.local.get(['defaultDelay', 'defaultMaxClicks'], (result) => {
+    // ====================================================================
+    // SETTINGS MANAGEMENT (TAB-SPECIFIC)
+    // ====================================================================
+
+    function loadSavedState() {
+        if (!currentTabId) return;
+        
+        // Load tab-specific settings
+        chrome.storage.local.get([
+            `coords_${currentTabId}`,
+            'defaultDelay', 
+            'defaultMaxClicks'
+        ], (result) => {
+            // Load coordinates for this tab
+            if (result[`coords_${currentTabId}`]) {
+                updateCoordsDisplay(result[`coords_${currentTabId}`]);
+            }
+            
+            // Load default settings
             if (delayInput && result.defaultDelay) {
                 delayInput.value = result.defaultDelay;
             }
@@ -263,9 +392,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 maxClicksInput.value = result.defaultMaxClicks;
             }
         });
+
+        // Get current state from background
+        chrome.runtime.sendMessage({ 
+            action: "getTabState",
+            tabId: currentTabId 
+        }, (response) => {
+            if (response?.success && response.state) {
+                loadTabState(response.state);
+            }
+        });
     }
 
-    // Save settings when changed
+    // Save settings when changed (global settings)
     if (delayInput) {
         delayInput.addEventListener('change', () => {
             chrome.storage.local.set({ defaultDelay: parseInt(delayInput.value) });
@@ -278,9 +417,22 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Initialize
-    loadSavedCoords();
-    loadSettings();
+    // ====================================================================
+    // INITIALIZATION
+    // ====================================================================
 
-    console.log('Auto Clicker sidebar initialized');
+    // Get current tab ID first
+    getCurrentTabId();
+    
+    // Load default settings
+    chrome.storage.local.get(['defaultDelay', 'defaultMaxClicks'], (result) => {
+        if (delayInput && result.defaultDelay) {
+            delayInput.value = result.defaultDelay;
+        }
+        if (maxClicksInput && result.defaultMaxClicks) {
+            maxClicksInput.value = result.defaultMaxClicks;
+        }
+    });
+
+    console.log('Enhanced Auto Clicker sidebar initialized');
 });
