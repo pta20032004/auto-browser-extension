@@ -1,0 +1,25 @@
+/* Style cho iframe chứa sidebar */
+#automation-suite-sidebar {
+    position: fixed;
+    top: 0;
+    right: 0;
+    width: 380px;
+    height: 100%;
+    z-index: 2147483647; /* Lớp cao nhất */
+    border: none;
+    box-shadow: -2px 0 10px rgba(0, 0, 0, 0.15);
+    transform: translateX(100%);
+    transition: transform 0.3s ease-in-out;
+    background-color: #f8fafc;
+}
+
+#automation-suite-sidebar.visible {
+    transform: translateX(0);
+}
+
+/* Style cho body của trang web khi sidebar mở */
+body.automation-sidebar-open {
+    /* Hiệu ứng đẩy trang web sang trái */
+    transition: margin-right 0.3s ease-in-out;
+    margin-right: 380px !important;
+}
