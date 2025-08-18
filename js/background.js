@@ -1,7 +1,8 @@
-// Enhanced Web Automation Suite - Background Script with Tab Independence
+// Enhanced Web Automation Suite - Background Script v4.1
 let clickIntervals = new Map(); // Map tabId -> interval
 let runningStates = new Map(); // Map tabId -> { isRunning, clickCount, maxClicks }
 let tabCoordinates = new Map(); // Map tabId -> { x, y }
+let tabViewportInfo = new Map(); // Map tabId -> viewport info
 
 // ====================================================================
 // TAB STATE MANAGEMENT
@@ -31,11 +32,20 @@ function setTabCoords(tabId, coords) {
     chrome.storage.local.set({ [`coords_${tabId}`]: coords });
 }
 
+function getTabViewport(tabId) {
+    return tabViewportInfo.get(tabId) || null;
+}
+
+function setTabViewport(tabId, viewport) {
+    tabViewportInfo.set(tabId, viewport);
+}
+
 // Clean up when tab is closed
 chrome.tabs.onRemoved.addListener((tabId) => {
     stopAutoClickForTab(tabId);
     runningStates.delete(tabId);
     tabCoordinates.delete(tabId);
+    tabViewportInfo.delete(tabId);
     chrome.storage.local.remove([`coords_${tabId}`]);
     console.log(`Cleaned up state for closed tab: ${tabId}`);
 });
@@ -80,7 +90,7 @@ chrome.action.onClicked.addListener((tab) => {
 });
 
 // ====================================================================
-// MESSAGE LISTENER
+// MESSAGE LISTENER - ENHANCED
 // ====================================================================
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     const tabId = sender.tab?.id || request.tabId;
@@ -101,15 +111,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             case "getTabState":
                 const state = getTabState(tabId);
                 const coords = getTabCoords(tabId);
+                const viewport = getTabViewport(tabId);
                 sendResponse({ 
                     success: true, 
-                    state: { ...state, coords },
+                    state: { ...state, coords, viewport },
                     tabId 
                 });
                 break;
                 
             case "setTabCoords":
                 setTabCoords(tabId, request.coords);
+                sendResponse({ success: true, tabId });
+                break;
+
+            case "setTabViewport":
+                setTabViewport(tabId, request.viewport);
                 sendResponse({ success: true, tabId });
                 break;
                 
@@ -130,8 +146,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     .then(result => sendResponse({ success: true, result, tabId }))
                     .catch(error => sendResponse({ success: false, error: error.message, tabId }));
                 return true;
+
+            case "getViewportInfo":
+                getViewportInfoForTab(tabId)
+                    .then(result => sendResponse({ success: true, result, tabId }))
+                    .catch(error => sendResponse({ success: false, error: error.message, tabId }));
+                return true;
                 
-            // Cookie operations
+            // ENHANCED COOKIE OPERATIONS
             case "getAllCookies":
                 getAllCookiesForTab(tabId)
                     .then(cookies => sendResponse({ success: true, cookies, tabId }))
@@ -165,6 +187,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 });
                 sendResponse({ success: true, tabId });
                 break;
+
+            // FILE OPERATIONS FOR SETINPUTFILES
+            case "getFileFromIndexedDB":
+                getFileFromIndexedDBForTab(tabId, request.filePath)
+                    .then(fileBlob => sendResponse({ success: true, fileBlob, tabId }))
+                    .catch(error => sendResponse({ success: false, error: error.message, tabId }));
+                return true;
+
+            case "listFilesInIndexedDB":
+                listFilesInIndexedDBForTab(tabId)
+                    .then(files => sendResponse({ success: true, files, tabId }))
+                    .catch(error => sendResponse({ success: false, error: error.message, tabId }));
+                return true;
                 
             default:
                 sendResponse({ success: false, error: "Unknown action", tabId });
@@ -269,7 +304,7 @@ function stopAutoClickForTab(tabId) {
 }
 
 // ====================================================================
-// TAB-SPECIFIC SCRIPT EXECUTION
+// TAB-SPECIFIC SCRIPT EXECUTION - ENHANCED
 // ====================================================================
 async function executeAutomationScriptForTab(tabId, script) {
     const steps = script.steps || script;
@@ -339,7 +374,7 @@ function executeStepForTab(tabId, step) {
 }
 
 // ====================================================================
-// PAGE INFO FOR SPECIFIC TAB
+// PAGE INFO FOR SPECIFIC TAB - ENHANCED
 // ====================================================================
 async function getPageInfoForTab(tabId) {
     return new Promise((resolve, reject) => {
@@ -368,8 +403,37 @@ async function getPageInfoForTab(tabId) {
     });
 }
 
+async function getViewportInfoForTab(tabId) {
+    return new Promise((resolve, reject) => {
+        chrome.tabs.get(tabId, (tab) => {
+            if (chrome.runtime.lastError || !tab) {
+                reject(new Error(`Tab ${tabId} không tồn tại`));
+                return;
+            }
+            
+            chrome.tabs.sendMessage(tabId, {
+                action: "getViewportInfo",
+                tabId: tabId
+            }, (response) => {
+                if (chrome.runtime.lastError) {
+                    reject(new Error(chrome.runtime.lastError.message));
+                    return;
+                }
+                
+                if (response?.success) {
+                    // Cache viewport info
+                    setTabViewport(tabId, response.result);
+                    resolve({ ...response.result, tabId });
+                } else {
+                    reject(new Error(response?.error || 'Failed to get viewport info'));
+                }
+            });
+        });
+    });
+}
+
 // ====================================================================
-// COOKIE MANAGEMENT FOR SPECIFIC TAB
+// ENHANCED COOKIE MANAGEMENT FOR SPECIFIC TAB
 // ====================================================================
 
 async function getAllCookiesForTab(tabId) {
@@ -391,16 +455,25 @@ async function getAllCookiesForTab(tabId) {
         const url = new URL(tab.url);
         const domain = url.hostname;
 
+        // Get cookies for all related domains
         const cookies = await new Promise((resolve, reject) => {
-            chrome.cookies.getAll({ domain: domain }, (cookies) => {
+            chrome.cookies.getAll({}, (allCookies) => {
                 if (chrome.runtime.lastError) {
                     reject(new Error(chrome.runtime.lastError.message));
                 } else {
-                    resolve(cookies);
+                    // Filter cookies for current domain and subdomains
+                    const relevantCookies = allCookies.filter(cookie => {
+                        return cookie.domain === domain || 
+                               cookie.domain === `.${domain}` ||
+                               domain.endsWith(cookie.domain.replace('.', '')) ||
+                               cookie.domain.endsWith(domain);
+                    });
+                    resolve(relevantCookies);
                 }
             });
         });
 
+        console.log(`Retrieved ${cookies.length} cookies for tab ${tabId} (${domain})`);
         return cookies;
     } catch (error) {
         console.error('Failed to get cookies for tab:', tabId, error);
@@ -425,7 +498,11 @@ async function setCookiesForTab(tabId, cookies, url) {
         }
 
         const targetUrl = url || tab.url;
-        const targetDomain = new URL(targetUrl).hostname;
+        const parsedUrl = new URL(targetUrl);
+        const targetDomain = parsedUrl.hostname;
+
+        let successCount = 0;
+        let errorCount = 0;
 
         for (const cookie of cookies) {
             try {
@@ -435,7 +512,7 @@ async function setCookiesForTab(tabId, cookies, url) {
                     value: cookie.value,
                     domain: cookie.domain || targetDomain,
                     path: cookie.path || '/',
-                    secure: cookie.secure || false,
+                    secure: cookie.secure !== undefined ? cookie.secure : parsedUrl.protocol === 'https:',
                     httpOnly: cookie.httpOnly || false,
                     sameSite: cookie.sameSite || 'lax'
                 };
@@ -445,21 +522,29 @@ async function setCookiesForTab(tabId, cookies, url) {
                 }
 
                 await new Promise((resolve, reject) => {
-                    chrome.cookies.set(cookieDetails, (cookie) => {
+                    chrome.cookies.set(cookieDetails, (result) => {
                         if (chrome.runtime.lastError) {
-                            console.warn('Failed to set cookie:', cookie?.name, chrome.runtime.lastError.message);
+                            console.warn(`Failed to set cookie ${cookie.name}:`, chrome.runtime.lastError.message);
+                            errorCount++;
                             resolve(); // Continue with other cookies
                         } else {
-                            resolve(cookie);
+                            successCount++;
+                            resolve(result);
                         }
                     });
                 });
             } catch (error) {
                 console.warn('Error setting cookie:', cookie.name, error);
+                errorCount++;
             }
         }
 
-        console.log(`Cookies applied for tab ${tabId}`);
+        console.log(`Cookies applied for tab ${tabId}: ${successCount} success, ${errorCount} errors`);
+        
+        if (successCount === 0 && errorCount > 0) {
+            throw new Error(`Failed to set any cookies (${errorCount} errors)`);
+        }
+        
     } catch (error) {
         console.error('Failed to set cookies for tab:', tabId, error);
         throw error;
@@ -487,25 +572,35 @@ async function clearCookiesForTab(tabId, url) {
 
         // Get all cookies for this domain
         const cookies = await new Promise((resolve, reject) => {
-            chrome.cookies.getAll({ domain: targetDomain }, (cookies) => {
+            chrome.cookies.getAll({}, (allCookies) => {
                 if (chrome.runtime.lastError) {
                     reject(new Error(chrome.runtime.lastError.message));
                 } else {
-                    resolve(cookies);
+                    // Filter cookies for current domain
+                    const domainCookies = allCookies.filter(cookie => {
+                        return cookie.domain === targetDomain || 
+                               cookie.domain === `.${targetDomain}` ||
+                               targetDomain.endsWith(cookie.domain.replace('.', ''));
+                    });
+                    resolve(domainCookies);
                 }
             });
         });
 
         // Remove each cookie
+        let removedCount = 0;
         for (const cookie of cookies) {
             try {
                 await new Promise((resolve, reject) => {
+                    const cookieUrl = `${cookie.secure ? 'https' : 'http'}://${cookie.domain}${cookie.path}`;
                     chrome.cookies.remove({
-                        url: targetUrl,
+                        url: cookieUrl,
                         name: cookie.name
                     }, (details) => {
                         if (chrome.runtime.lastError) {
                             console.warn('Failed to remove cookie:', cookie.name, chrome.runtime.lastError.message);
+                        } else {
+                            removedCount++;
                         }
                         resolve();
                     });
@@ -515,11 +610,58 @@ async function clearCookiesForTab(tabId, url) {
             }
         }
 
-        console.log(`Cookies cleared for tab ${tabId}`);
+        console.log(`Cookies cleared for tab ${tabId}: ${removedCount}/${cookies.length} removed`);
     } catch (error) {
         console.error('Failed to clear cookies for tab:', tabId, error);
         throw error;
     }
+}
+
+// ====================================================================
+// FILE OPERATIONS FOR SETINPUTFILES STEP
+// ====================================================================
+
+async function getFileFromIndexedDBForTab(tabId, filePath) {
+    // This would need to interact with the content script's IndexedDB
+    // For now, we'll return a placeholder
+    return new Promise((resolve, reject) => {
+        chrome.tabs.sendMessage(tabId, {
+            action: "getFileFromIndexedDB",
+            filePath: filePath,
+            tabId: tabId
+        }, (response) => {
+            if (chrome.runtime.lastError) {
+                reject(new Error(chrome.runtime.lastError.message));
+                return;
+            }
+            
+            if (response?.success) {
+                resolve(response.fileBlob);
+            } else {
+                reject(new Error(response?.error || 'Failed to get file from IndexedDB'));
+            }
+        });
+    });
+}
+
+async function listFilesInIndexedDBForTab(tabId) {
+    return new Promise((resolve, reject) => {
+        chrome.tabs.sendMessage(tabId, {
+            action: "listFilesInIndexedDB",
+            tabId: tabId
+        }, (response) => {
+            if (chrome.runtime.lastError) {
+                reject(new Error(chrome.runtime.lastError.message));
+                return;
+            }
+            
+            if (response?.success) {
+                resolve(response.files);
+            } else {
+                reject(new Error(response?.error || 'Failed to list files from IndexedDB'));
+            }
+        });
+    });
 }
 
 // ====================================================================
@@ -578,12 +720,12 @@ function sleep(ms) {
 }
 
 // ====================================================================
-// INITIALIZATION & CLEANUP
+// INITIALIZATION & CLEANUP - ENHANCED
 // ====================================================================
 
 // Restore tab states on startup
 chrome.runtime.onStartup.addListener(async () => {
-    console.log('Web Automation Suite started - restoring tab states');
+    console.log('Web Automation Suite v4.1 started - restoring tab states');
     
     // Get all tabs and restore their coordinates
     chrome.tabs.query({}, async (tabs) => {
@@ -603,9 +745,24 @@ chrome.runtime.onInstalled.addListener((details) => {
     if (details.reason === 'install') {
         showNotification(
             'Cài đặt thành công!', 
-            'Nhấn vào icon của extension để bắt đầu.'
+            'Web Automation Suite v4.1 đã sẵn sàng. Nhấn vào icon để bắt đầu.'
+        );
+    } else if (details.reason === 'update') {
+        showNotification(
+            'Cập nhật thành công!', 
+            'Web Automation Suite v4.1 với Playwright Export và các tính năng mới.'
         );
     }
+
+    // Set default settings
+    chrome.storage.local.get(['defaultDelay', 'defaultMaxClicks'], (result) => {
+        if (!result.defaultDelay) {
+            chrome.storage.local.set({ defaultDelay: 1000 });
+        }
+        if (!result.defaultMaxClicks) {
+            chrome.storage.local.set({ defaultMaxClicks: 100 });
+        }
+    });
 });
 
 chrome.runtime.onSuspend.addListener(() => {
@@ -619,7 +776,7 @@ chrome.runtime.onSuspend.addListener(() => {
 
 // Handle tab updates (URL changes)
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-    if (changeInfo.status === 'complete' && changeInfo.url) {
+    if (changeInfo.status === 'complete') {
         // Stop auto-click if tab navigated to system page
         if (tab.url.startsWith('chrome://') || 
             tab.url.startsWith('chrome-extension://') ||
@@ -627,7 +784,41 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
             tab.url.startsWith('about:')) {
             stopAutoClickForTab(tabId);
         }
+        
+        // Update viewport info when page loads
+        setTimeout(() => {
+            getViewportInfoForTab(tabId).catch(error => {
+                console.log(`Could not get viewport info for tab ${tabId}:`, error.message);
+            });
+        }, 1000);
     }
 });
 
-console.log('Enhanced Background script loaded with tab independence and cookie management');
+// Handle tab activation (switching between tabs)
+chrome.tabs.onActivated.addListener((activeInfo) => {
+    const tabId = activeInfo.tabId;
+    
+    // Get viewport info for the active tab
+    setTimeout(() => {
+        getViewportInfoForTab(tabId).catch(error => {
+            console.log(`Could not get viewport info for active tab ${tabId}:`, error.message);
+        });
+    }, 500);
+});
+
+// Periodic cleanup of old data
+setInterval(() => {
+    // Clean up viewport info for non-existent tabs
+    chrome.tabs.query({}, (tabs) => {
+        const existingTabIds = new Set(tabs.map(tab => tab.id));
+        
+        for (const tabId of tabViewportInfo.keys()) {
+            if (!existingTabIds.has(tabId)) {
+                tabViewportInfo.delete(tabId);
+                console.log(`Cleaned up viewport info for non-existent tab: ${tabId}`);
+            }
+        }
+    });
+}, 300000); // Every 5 minutes
+
+console.log('Enhanced Background script v4.1 loaded with tab independence, cookie management, and Playwright support');

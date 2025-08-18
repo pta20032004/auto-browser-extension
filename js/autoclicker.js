@@ -1,4 +1,4 @@
-// Enhanced Auto Clicker for Sidebar UI - Tab Independent
+// Enhanced Auto Clicker for Sidebar UI - Fixed Coordinate Selection + Viewport Info
 document.addEventListener('DOMContentLoaded', () => {
     // Check if we're in the sidebar iframe
     if (window.self === window.top) {
@@ -44,10 +44,65 @@ document.addEventListener('DOMContentLoaded', () => {
     const yCoordEl = document.getElementById('yCoord');
 
     // ====================================================================
+    // VIEWPORT INFO DISPLAY
+    // ====================================================================
+    
+    function updateViewportInfo() {
+        // Get viewport info from parent window
+        sendMessageToParent({ action: "getViewportInfo" });
+    }
+
+    function displayViewportInfo(viewportData) {
+        // Find or create viewport info container
+        let viewportContainer = document.getElementById('viewportInfo');
+        if (!viewportContainer) {
+            viewportContainer = document.createElement('div');
+            viewportContainer.id = 'viewportInfo';
+            viewportContainer.className = 'viewport-info';
+            viewportContainer.style.cssText = `
+                background: white;
+                border: 1px solid #e2e8f0;
+                border-radius: 8px;
+                padding: 12px;
+                margin-bottom: 16px;
+                font-size: 11px;
+            `;
+            
+            // Insert after coords display or at top of current task
+            const currentTask = document.querySelector('#automation .current-task');
+            if (currentTask) {
+                currentTask.parentNode.insertBefore(viewportContainer, currentTask);
+            }
+        }
+
+        viewportContainer.innerHTML = `
+            <div style="font-weight: 600; margin-bottom: 8px; color: #1e293b;">📐 Thông tin Browser</div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                <div>
+                    <div style="color: #64748b; font-size: 9px;">Viewport</div>
+                    <div style="font-weight: 500;">${viewportData.viewport.width} × ${viewportData.viewport.height}</div>
+                </div>
+                <div>
+                    <div style="color: #64748b; font-size: 9px;">Screen</div>
+                    <div style="font-weight: 500;">${viewportData.screen.width} × ${viewportData.screen.height}</div>
+                </div>
+                <div>
+                    <div style="color: #64748b; font-size: 9px;">Zoom</div>
+                    <div style="font-weight: 500;">${Math.round(viewportData.devicePixelRatio * 100)}%</div>
+                </div>
+                <div>
+                    <div style="color: #64748b; font-size: 9px;">Scroll</div>
+                    <div style="font-weight: 500;">${viewportData.scroll.x}, ${viewportData.scroll.y}</div>
+                </div>
+            </div>
+        `;
+    }
+
+    // ====================================================================
     // EVENT LISTENERS
     // ====================================================================
 
-    // Start location picking
+    // Start location picking - FIXED
     if (startSelectionBtn) {
         startSelectionBtn.addEventListener('click', () => {
             if (!currentTabId) {
@@ -142,12 +197,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ====================================================================
-    // TAB-SPECIFIC FUNCTIONS
+    // TAB-SPECIFIC FUNCTIONS - FIXED COORDINATE PICKING
     // ====================================================================
 
     function startLocationPicking() {
         if (tabState.isPicking) return;
         
+        console.log(`Starting location picking for tab ${currentTabId}`);
         updateTabState({ isPicking: true });
         sendMessageToParent({ action: "startPicking" });
         
@@ -160,16 +216,28 @@ document.addEventListener('DOMContentLoaded', () => {
         
         showAlert(`Tab ${currentTabId}: Click vào vị trí muốn auto-click...`, 'info');
         
-        // Auto-cancel after 30 seconds
-        setTimeout(() => {
+        // Auto-cancel after 30 seconds - FIXED timeout handling
+        const timeoutId = setTimeout(() => {
             if (tabState.isPicking) {
+                console.log('Auto-canceling coordinate picking due to timeout');
                 cancelLocationPicking();
                 showAlert('Đã hủy chọn tọa độ (timeout)', 'warning');
             }
         }, 30000);
+        
+        // Store timeout ID for cleanup
+        tabState.pickingTimeoutId = timeoutId;
     }
 
     function cancelLocationPicking() {
+        console.log(`Canceling location picking for tab ${currentTabId}`);
+        
+        // Clear timeout if exists
+        if (tabState.pickingTimeoutId) {
+            clearTimeout(tabState.pickingTimeoutId);
+            delete tabState.pickingTimeoutId;
+        }
+        
         updateTabState({ isPicking: false });
         sendMessageToParent({ action: "cancelPicking" });
         resetSelectionButton();
@@ -247,7 +315,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ====================================================================
-    // MESSAGE HANDLING
+    // MESSAGE HANDLING - ENHANCED
     // ====================================================================
 
     // Listen for messages from parent content script
@@ -259,10 +327,17 @@ document.addEventListener('DOMContentLoaded', () => {
         switch (action) {
             case 'coordsUpdated':
                 if (data.coords && data.coords.tabId === currentTabId) {
+                    console.log(`Coordinates updated for tab ${currentTabId}:`, data.coords);
                     updateCoordsDisplay(data.coords);
                     updateTabState({ coords: data.coords, isPicking: false });
+                    
+                    // Clean up timeout
+                    if (tabState.pickingTimeoutId) {
+                        clearTimeout(tabState.pickingTimeoutId);
+                        delete tabState.pickingTimeoutId;
+                    }
+                    
                     resetSelectionButton();
-                    console.log(`Tab ${currentTabId}: Coordinates updated:`, data.coords);
                 }
                 break;
                 
@@ -277,6 +352,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 currentTabId = data.tabId;
                 console.log('Current tab ID set to:', currentTabId);
                 loadSavedState();
+                updateViewportInfo(); // Get viewport info when tab ID is set
                 break;
                 
             case 'tabStateLoaded':
@@ -287,7 +363,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 
             case 'pickingCanceled':
                 if (data.tabId === currentTabId) {
+                    console.log(`Picking canceled from parent for tab ${currentTabId}`);
                     updateTabState({ isPicking: false });
+                    
+                    // Clean up timeout
+                    if (tabState.pickingTimeoutId) {
+                        clearTimeout(tabState.pickingTimeoutId);
+                        delete tabState.pickingTimeoutId;
+                    }
+                    
                     resetSelectionButton();
                 }
                 break;
@@ -302,6 +386,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (currentUrlInput) currentUrlInput.value = data.href;
                 }
                 break;
+
+            case 'viewportInfoResponse':
+                // Handle viewport info display
+                if (data.viewport) {
+                    displayViewportInfo(data);
+                }
+                break;
         }
     });
 
@@ -314,6 +405,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (data.coords && data.coords.tabId === currentTabId) {
                     updateCoordsDisplay(data.coords);
                     updateTabState({ coords: data.coords, isPicking: false });
+                    
+                    // Clean up timeout
+                    if (tabState.pickingTimeoutId) {
+                        clearTimeout(tabState.pickingTimeoutId);
+                        delete tabState.pickingTimeoutId;
+                    }
+                    
                     resetSelectionButton();
                 }
                 break;
@@ -321,7 +419,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // ====================================================================
-    // UI UPDATE FUNCTIONS
+    // UI UPDATE FUNCTIONS - ENHANCED
     // ====================================================================
 
     function updateCoordsDisplay(coords) {
@@ -337,6 +435,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (tabState.isPicking) {
             resetSelectionButton();
             updateTabState({ isPicking: false });
+            
+            // Clean up timeout
+            if (tabState.pickingTimeoutId) {
+                clearTimeout(tabState.pickingTimeoutId);
+                delete tabState.pickingTimeoutId;
+            }
         }
 
         showAlert(`Tab ${currentTabId}: Đã chọn tọa độ (${coords.x}, ${coords.y})`, 'success');
@@ -497,6 +601,13 @@ document.addEventListener('DOMContentLoaded', () => {
             maxClicksInput.value = result.defaultMaxClicks;
         }
     });
+
+    // Update viewport info every 5 seconds
+    setInterval(() => {
+        if (currentTabId) {
+            updateViewportInfo();
+        }
+    }, 5000);
 
     console.log('Enhanced Auto Clicker sidebar initialized');
 });

@@ -2,13 +2,15 @@
   "manifest_version": 3,
   "name": "Web Automation Suite",
   "version": "4.1",
-  "description": "Automation tool with sidebar interface, cookie management and clipboard support",
+  "description": "Advanced automation tool with Playwright export, enhanced cookie management, viewport info, and clipboard support",
   "permissions": [
     "storage",
     "notifications",
     "scripting",
     "activeTab",
-    "cookies"
+    "cookies",
+    "clipboardRead",
+    "clipboardWrite"
   ],
   "host_permissions": [
     "http://*/*",
@@ -18,7 +20,8 @@
     "service_worker": "js/background.js"
   },
   "action": {
-    "default_title": "Open Automation Sidebar"
+    "default_title": "Open Automation Sidebar",
+    "default_popup": ""
   },
   "icons": {
     "16": "icons/icon16.png",
@@ -47,5 +50,11 @@
       ],
       "matches": ["<all_urls>"]
     }
-  ]
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self';"
+  },
+  "author": "Web Automation Suite Team",
+  "homepage_url": "https://github.com/your-repo/web-automation-suite",
+  "minimum_chrome_version": "88"
 }

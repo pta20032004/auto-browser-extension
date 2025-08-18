@@ -1,8 +1,9 @@
-// Cookie Manager for Auto Clicker Extension
+// Fixed Cookie Manager for Auto Clicker Extension
 class CookieManager {
     constructor() {
         this.initializeEventListeners();
         this.loadCookiesList();
+        this.updateCurrentPageInfo();
     }
 
     initializeEventListeners() {
@@ -27,6 +28,20 @@ class CookieManager {
         });
     }
 
+    async updateCurrentPageInfo() {
+        try {
+            // Get current page info from parent window
+            if (window.parent && window.parent !== window) {
+                window.parent.postMessage({
+                    source: 'automation-sidebar',
+                    action: 'getLocationInfo'
+                }, '*');
+            }
+        } catch (error) {
+            console.warn('Could not get page info:', error);
+        }
+    }
+
     async exportCurrentCookies() {
         try {
             const exportBtn = document.getElementById('exportCookiesBtn');
@@ -34,16 +49,42 @@ class CookieManager {
             exportBtn.textContent = 'Đang xuất...';
             exportBtn.disabled = true;
 
-            // Get all cookies for current domain
-            const currentDomain = window.location.hostname;
-            const allCookies = await this.getAllCookies();
-            
-            // Filter cookies for current domain and subdomains
-            const domainCookies = allCookies.filter(cookie => 
-                cookie.domain === currentDomain || 
-                cookie.domain === `.${currentDomain}` ||
-                currentDomain.endsWith(cookie.domain.substring(1))
-            );
+            // Get cookies via background script
+            const response = await new Promise((resolve) => {
+                chrome.runtime.sendMessage({ 
+                    action: 'getAllCookies'
+                }, (response) => {
+                    resolve(response);
+                });
+            });
+
+            if (!response || !response.success) {
+                throw new Error(response?.error || 'Không thể lấy cookies từ background script');
+            }
+
+            const allCookies = response.cookies;
+            console.log('Retrieved cookies:', allCookies);
+
+            if (!allCookies || allCookies.length === 0) {
+                this.showAlert('Không tìm thấy cookies nào cho domain này.', 'warning');
+                return;
+            }
+
+            // Get current domain info
+            const currentDomainInput = document.getElementById('currentDomain');
+            const currentUrlInput = document.getElementById('currentUrl');
+            const currentDomain = currentDomainInput?.value || 'unknown';
+            const currentUrl = currentUrlInput?.value || 'unknown';
+
+            // Filter cookies for current domain if we have it
+            let domainCookies = allCookies;
+            if (currentDomain !== 'unknown') {
+                domainCookies = allCookies.filter(cookie => 
+                    cookie.domain === currentDomain || 
+                    cookie.domain === `.${currentDomain}` ||
+                    currentDomain.endsWith(cookie.domain.replace('.', ''))
+                );
+            }
 
             if (domainCookies.length === 0) {
                 this.showAlert('Không tìm thấy cookies nào cho domain này.', 'warning');
@@ -53,7 +94,7 @@ class CookieManager {
             // Create cookie data object
             const cookieData = {
                 domain: currentDomain,
-                url: window.location.href,
+                url: currentUrl,
                 exportDate: new Date().toISOString(),
                 userAgent: navigator.userAgent,
                 cookies: domainCookies
@@ -71,7 +112,7 @@ class CookieManager {
 
         } catch (error) {
             console.error('Export cookies failed:', error);
-            this.showAlert('Không thể xuất cookies. Vui lòng thử lại.', 'error');
+            this.showAlert('Không thể xuất cookies: ' + error.message, 'error');
         } finally {
             const exportBtn = document.getElementById('exportCookiesBtn');
             exportBtn.textContent = 'Xuất Cookies';
@@ -80,43 +121,23 @@ class CookieManager {
     }
 
     async getAllCookies() {
-        return new Promise((resolve) => {
-            // Try to get cookies via background script if possible
-            chrome.runtime.sendMessage({ action: 'getAllCookies' }, (response) => {
+        return new Promise((resolve, reject) => {
+            // Always use background script for reliable cookie access
+            chrome.runtime.sendMessage({ 
+                action: 'getAllCookies' 
+            }, (response) => {
+                if (chrome.runtime.lastError) {
+                    reject(new Error(chrome.runtime.lastError.message));
+                    return;
+                }
+                
                 if (response && response.success) {
                     resolve(response.cookies);
                 } else {
-                    // Fallback: parse document.cookie
-                    const cookies = this.parseCookiesFromDocument();
-                    resolve(cookies);
+                    reject(new Error(response?.error || 'Failed to get cookies'));
                 }
             });
         });
-    }
-
-    parseCookiesFromDocument() {
-        const cookies = [];
-        const cookieString = document.cookie;
-        
-        if (cookieString) {
-            const cookiePairs = cookieString.split(';');
-            cookiePairs.forEach(pair => {
-                const [name, value] = pair.trim().split('=');
-                if (name && value) {
-                    cookies.push({
-                        name: name,
-                        value: decodeURIComponent(value),
-                        domain: window.location.hostname,
-                        path: '/',
-                        secure: window.location.protocol === 'https:',
-                        httpOnly: false,
-                        sameSite: 'Lax'
-                    });
-                }
-            });
-        }
-        
-        return cookies;
     }
 
     async saveCookieData(fileName, cookieData) {
@@ -169,8 +190,19 @@ class CookieManager {
                 throw new Error('Định dạng file cookies không hợp lệ');
             }
 
-            // Apply cookies to current domain
-            await this.applyCookies(cookieData.cookies);
+            // Apply cookies via background script
+            const response = await new Promise((resolve) => {
+                chrome.runtime.sendMessage({ 
+                    action: 'setCookies', 
+                    cookies: cookieData.cookies
+                }, (response) => {
+                    resolve(response);
+                });
+            });
+
+            if (!response || !response.success) {
+                throw new Error(response?.error || 'Failed to set cookies');
+            }
 
             // Save imported cookie file to our storage
             const savedFileName = `imported_${file.name}`;
@@ -181,7 +213,13 @@ class CookieManager {
 
             // Suggest page reload
             if (this.confirmAlert('Cookies đã được áp dụng. Bạn có muốn reload trang để đăng nhập?')) {
-                window.location.reload();
+                // Send reload message to parent
+                if (window.parent && window.parent !== window) {
+                    window.parent.postMessage({
+                        source: 'automation-sidebar',
+                        action: 'reloadPage'
+                    }, '*');
+                }
             }
 
         } catch (error) {
@@ -194,90 +232,41 @@ class CookieManager {
         }
     }
 
-    async applyCookies(cookies) {
-        // Try to apply via background script first
-        const backgroundResult = await new Promise((resolve) => {
-            chrome.runtime.sendMessage({ 
-                action: 'setCookies', 
-                cookies: cookies,
-                url: window.location.href
-            }, (response) => {
-                resolve(response);
-            });
-        });
-
-        if (backgroundResult && backgroundResult.success) {
-            console.log('Cookies applied via background script');
-            return;
-        }
-
-        // Fallback: apply via document.cookie (limited functionality)
-        console.log('Applying cookies via document.cookie fallback');
-        cookies.forEach(cookie => {
-            if (!cookie.httpOnly) { // Can only set non-httpOnly cookies via document.cookie
-                let cookieString = `${cookie.name}=${encodeURIComponent(cookie.value)}`;
-                
-                if (cookie.path) cookieString += `; Path=${cookie.path}`;
-                if (cookie.domain) cookieString += `; Domain=${cookie.domain}`;
-                if (cookie.secure) cookieString += `; Secure`;
-                if (cookie.sameSite) cookieString += `; SameSite=${cookie.sameSite}`;
-                
-                if (cookie.expirationDate) {
-                    const expireDate = new Date(cookie.expirationDate * 1000);
-                    cookieString += `; Expires=${expireDate.toUTCString()}`;
-                }
-
-                document.cookie = cookieString;
-            }
-        });
-    }
-
     async clearAllCookies() {
         if (!this.confirmAlert('Bạn có chắc muốn xóa tất cả cookies của domain này?')) {
             return;
         }
 
         try {
-            // Try via background script first
-            const result = await new Promise((resolve) => {
+            // Clear via background script
+            const response = await new Promise((resolve) => {
                 chrome.runtime.sendMessage({ 
-                    action: 'clearCookies',
-                    url: window.location.href
+                    action: 'clearCookies'
                 }, (response) => {
                     resolve(response);
                 });
             });
 
-            if (result && result.success) {
+            if (response && response.success) {
                 this.showAlert('Đã xóa cookies thành công!', 'success');
             } else {
-                // Fallback: clear via document.cookie
-                this.clearCookiesViaDocument();
-                this.showAlert('Đã xóa cookies (một số cookies có thể cần reload trang).', 'warning');
+                throw new Error(response?.error || 'Failed to clear cookies');
             }
 
             if (this.confirmAlert('Bạn có muốn reload trang để áp dụng thay đổi?')) {
-                window.location.reload();
+                // Send reload message to parent
+                if (window.parent && window.parent !== window) {
+                    window.parent.postMessage({
+                        source: 'automation-sidebar',
+                        action: 'reloadPage'
+                    }, '*');
+                }
             }
 
         } catch (error) {
             console.error('Clear cookies failed:', error);
-            this.showAlert('Không thể xóa cookies. Vui lòng thử lại.', 'error');
+            this.showAlert('Không thể xóa cookies: ' + error.message, 'error');
         }
-    }
-
-    clearCookiesViaDocument() {
-        const cookies = document.cookie.split(';');
-        cookies.forEach(cookie => {
-            const eqPos = cookie.indexOf('=');
-            const name = eqPos > -1 ? cookie.substr(0, eqPos).trim() : cookie.trim();
-            if (name) {
-                // Set expiration date to past
-                document.cookie = `${name}=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT`;
-                document.cookie = `${name}=; Path=/; Domain=${window.location.hostname}; Expires=Thu, 01 Jan 1970 00:00:00 GMT`;
-                document.cookie = `${name}=; Path=/; Domain=.${window.location.hostname}; Expires=Thu, 01 Jan 1970 00:00:00 GMT`;
-            }
-        });
     }
 
     async loadCookiesList() {
@@ -368,11 +357,30 @@ class CookieManager {
                 throw new Error('Định dạng file cookies không hợp lệ');
             }
 
-            await this.applyCookies(cookieData.cookies);
+            // Apply via background script
+            const response = await new Promise((resolve) => {
+                chrome.runtime.sendMessage({ 
+                    action: 'setCookies', 
+                    cookies: cookieData.cookies
+                }, (response) => {
+                    resolve(response);
+                });
+            });
+
+            if (!response || !response.success) {
+                throw new Error(response?.error || 'Failed to apply cookies');
+            }
+
             this.showAlert(`Đã áp dụng ${cookieData.cookies.length} cookies từ file ${file.name}!`, 'success');
 
             if (this.confirmAlert('Cookies đã được áp dụng. Bạn có muốn reload trang?')) {
-                window.location.reload();
+                // Send reload message to parent
+                if (window.parent && window.parent !== window) {
+                    window.parent.postMessage({
+                        source: 'automation-sidebar',
+                        action: 'reloadPage'
+                    }, '*');
+                }
             }
 
         } catch (error) {
@@ -430,7 +438,33 @@ class CookieManager {
         if (window.SidebarUtils && window.SidebarUtils.showNotification) {
             window.SidebarUtils.showNotification(message, type);
         } else {
-            console.log(`[${type.toUpperCase()}] ${message}`);
+            // Fallback notification
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `alert alert-${type}`;
+            alertDiv.textContent = message;
+            alertDiv.style.cssText = `
+                position: fixed;
+                top: 10px;
+                right: 10px;
+                background: ${type === 'success' ? '#d4edda' : type === 'error' ? '#f8d7da' : type === 'warning' ? '#fff3cd' : '#d1ecf1'};
+                color: ${type === 'success' ? '#155724' : type === 'error' ? '#721c24' : type === 'warning' ? '#856404' : '#0c5460'};
+                border: 1px solid ${type === 'success' ? '#c3e6cb' : type === 'error' ? '#f5c6cb' : type === 'warning' ? '#ffeaa7' : '#bee5eb'};
+                padding: 8px 12px;
+                border-radius: 4px;
+                font-size: 11px;
+                z-index: 10000;
+                max-width: 280px;
+                word-wrap: break-word;
+                animation: slideInRight 0.3s ease;
+            `;
+            
+            document.body.appendChild(alertDiv);
+            
+            setTimeout(() => {
+                if (alertDiv.parentNode) {
+                    alertDiv.parentNode.removeChild(alertDiv);
+                }
+            }, 4000);
         }
     }
 
@@ -458,23 +492,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (currentUrlInput) currentUrlInput.value = data.href;
         }
     });
-    
-    // Update current domain and URL info
-    if (window.parent && window.parent !== window) {
-        try {
-            const currentDomainInput = document.getElementById('currentDomain');
-            const currentUrlInput = document.getElementById('currentUrl');
-            
-            if (currentDomainInput) currentDomainInput.value = window.parent.location.hostname;
-            if (currentUrlInput) currentUrlInput.value = window.parent.location.href;
-        } catch (error) {
-            // Cross-origin access denied, use message passing
-            window.parent.postMessage({
-                source: 'automation-sidebar',
-                action: 'getLocationInfo'
-            }, '*');
-        }
-    }
     
     // Make cookie manager utilities globally available
     window.CookieManagerUtils = {

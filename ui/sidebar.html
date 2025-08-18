@@ -10,7 +10,7 @@
     <!-- Header -->
     <div class="header">
         <h1>Automation Suite</h1>
-        <p>Tự động hóa web thông minh</p>
+        <p>Tự động hóa web thông minh v4.1</p>
     </div>
 
     <!-- Navigation -->
@@ -50,6 +50,8 @@
                 </div>
             </div>
 
+            <!-- Viewport Info will be inserted here by JavaScript -->
+
             <!-- Coordinates Display -->
             <div class="coords-display" id="coordsDisplay" style="display: none;">
                 <h4>Tọa độ đã chọn</h4>
@@ -87,9 +89,9 @@
                 <div class="task-header">
                     <div class="task-title">Xây dựng kịch bản</div>
                     <div class="task-controls">
-                        <button class="btn btn-primary btn-small" id="addStepBtn">Thêm bước</button>
-                        <button class="btn btn-secondary btn-small" id="loadScriptBtn">Tải script</button>
-                        <button class="btn btn-success btn-small" id="saveScriptBtn">Lưu script</button>
+                        <button class="btn btn-primary btn-small" id="addStepBtn">➕ Thêm bước</button>
+                        <button class="btn btn-secondary btn-small" id="loadScriptBtn">📂 Tải script</button>
+                        <button class="btn btn-success btn-small" id="saveScriptBtn">💾 Lưu script</button>
                     </div>
                 </div>
                 
@@ -103,6 +105,7 @@
 
                 <div class="task-controls">
                     <button class="btn btn-success" id="runScriptBtn">▶️ Chạy script</button>
+                    <button class="btn btn-secondary" id="exportPlaywrightBtn">🎭 Export Playwright</button>
                     <button class="btn btn-danger" id="clearScriptBtn">🗑️ Xóa tất cả</button>
                 </div>
             </div>
@@ -118,8 +121,8 @@
                     <div class="upload-subtext">Kéo thả hoặc nhấn nút để chọn</div>
                 </div>
                 <div class="upload-actions">
-                    <button class="btn btn-primary btn-small" id="uploadFilesBtn">Chọn Files</button>
-                    <button class="btn btn-secondary btn-small" id="uploadFolderBtn">Chọn Thư mục</button>
+                    <button class="btn btn-primary btn-small" id="uploadFilesBtn">📄 Chọn Files</button>
+                    <button class="btn btn-secondary btn-small" id="uploadFolderBtn">📁 Chọn Thư mục</button>
                     <button class="btn btn-success btn-small" id="pasteImageBtn">📋 Dán Ảnh</button>
                 </div>
             </div>
@@ -131,7 +134,7 @@
                     <span class="stat-value" id="storageUsed">0 KB</span>
                 </div>
                 <div class="stat-actions">
-                    <button class="btn btn-danger btn-small" id="clearAllFilesBtn">Xóa tất cả</button>
+                    <button class="btn btn-danger btn-small" id="clearAllFilesBtn">🗑️ Xóa tất cả</button>
                 </div>
             </div>
 
@@ -199,13 +202,13 @@
                 <div class="setting-item">
                     <div class="setting-label">Delay mặc định (ms)</div>
                     <div class="setting-control">
-                        <input type="number" value="1000" min="50" max="10000">
+                        <input type="number" id="defaultDelay" value="1000" min="50" max="10000">
                     </div>
                 </div>
                 <div class="setting-item">
                     <div class="setting-label">Số click tối đa</div>
                     <div class="setting-control">
-                        <input type="number" value="100" min="1" max="1000">
+                        <input type="number" id="defaultMaxClicks" value="100" min="1" max="1000">
                     </div>
                 </div>
             </div>
@@ -215,13 +218,37 @@
                 <div class="setting-item">
                     <div class="setting-label">Delay giữa các bước (ms)</div>
                     <div class="setting-control">
-                        <input type="number" value="500" min="100" max="5000">
+                        <input type="number" id="defaultStepDelay" value="500" min="100" max="5000">
                     </div>
                 </div>
                 <div class="setting-item">
                     <div class="setting-label">Timeout mặc định (ms)</div>
                     <div class="setting-control">
-                        <input type="number" value="5000" min="1000" max="30000">
+                        <input type="number" id="defaultTimeout" value="5000" min="1000" max="30000">
+                    </div>
+                </div>
+            </div>
+
+            <div class="setting-group">
+                <h3>Cài đặt Playwright Export</h3>
+                <div class="setting-item">
+                    <div class="setting-label">Ngôn ngữ export</div>
+                    <div class="setting-control">
+                        <select id="playwrightLanguage">
+                            <option value="javascript">JavaScript</option>
+                            <option value="typescript">TypeScript</option>
+                            <option value="python">Python</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="setting-item">
+                    <div class="setting-label">Test framework</div>
+                    <div class="setting-control">
+                        <select id="playwrightFramework">
+                            <option value="playwright">Playwright Test</option>
+                            <option value="jest">Jest + Playwright</option>
+                            <option value="mocha">Mocha + Playwright</option>
+                        </select>
                     </div>
                 </div>
             </div>
@@ -233,6 +260,18 @@
                     <div class="setting-control">4.1</div>
                 </div>
                 <div class="setting-item">
+                    <div class="setting-label">Tính năng mới</div>
+                    <div class="setting-control">
+                        <div style="font-size: 10px; color: #666;">
+                            ✨ Playwright Export<br>
+                            📐 Viewport Info<br>
+                            🎯 Fixed Coordinate Picking<br>
+                            🍪 Enhanced Cookie Management<br>
+                            📁 File Picker for Scripts
+                        </div>
+                    </div>
+                </div>
+                <div class="setting-item">
                     <div class="setting-label">Cập nhật cuối</div>
                     <div class="setting-control">2024</div>
                 </div>
@@ -240,9 +279,9 @@
         </div>
     </div>
 
-    <!-- Add Step Modal -->
+    <!-- Add Step Modal - Enhanced -->
     <div id="addStepModal" class="modal">
-        <div class="modal-content">
+        <div class="modal-content" style="max-width: 600px;">
             <div class="modal-header">
                 <h3 class="modal-title">Thêm bước mới</h3>
                 <button class="close">&times;</button>
@@ -250,20 +289,44 @@
             <div class="form-group">
                 <label class="form-label">Loại bước</label>
                 <select id="stepType" class="form-control">
-                    <option value="click">Click (tọa độ)</option>
-                    <option value="clickElement">Click Element</option>
-                    <option value="type">Nhập text</option>
-                    <option value="press">Nhấn phím</option>
-                    <option value="wait">Chờ</option>
-                    <option value="scroll">Scroll</option>
-                    <option value="hover">Hover</option>
-                    <option value="goto">Đi tới URL</option>
+                    <optgroup label="🎯 Classic Actions">
+                        <option value="click">Click (tọa độ)</option>
+                        <option value="clickElement">Click Element</option>
+                        <option value="type">Nhập text</option>
+                        <option value="press">Nhấn phím</option>
+                        <option value="wait">Chờ</option>
+                        <option value="scroll">Scroll</option>
+                        <option value="hover">Hover</option>
+                        <option value="goto">Đi tới URL</option>
+                        <option value="reload">Reload trang</option>
+                    </optgroup>
+                    <optgroup label="🎭 Playwright Locators">
+                        <option value="getByRole">Tìm theo Role</option>
+                        <option value="getByText">Tìm theo Text</option>
+                        <option value="getByPlaceholder">Tìm theo Placeholder</option>
+                    </optgroup>
+                    <optgroup label="👆 Playwright Actions">
+                        <option value="fill">Điền Text (Fill)</option>
+                        <option value="setInputFiles">Upload Files</option>
+                        <option value="selectOption">Chọn Option</option>
+                        <option value="check">Check/Uncheck</option>
+                    </optgroup>
+                    <optgroup label="📥 Data Extraction">
+                        <option value="getText">Lấy Text (Legacy)</option>
+                        <option value="innerText">Lấy Inner Text</option>
+                        <option value="textContent">Lấy Text Content</option>
+                        <option value="inputValue">Lấy Input Value</option>
+                        <option value="getAttribute">Lấy Attribute</option>
+                    </optgroup>
+                    <optgroup label="⏱️ Wait Actions">
+                        <option value="waitForElement">Chờ Element</option>
+                    </optgroup>
                 </select>
             </div>
             <div id="stepParams"></div>
             <div class="task-controls">
-                <button class="btn btn-primary" id="confirmAddStep">Thêm</button>
-                <button class="btn btn-secondary" id="cancelAddStep">Hủy</button>
+                <button class="btn btn-primary" id="confirmAddStep">✅ Thêm</button>
+                <button class="btn btn-secondary" id="cancelAddStep">❌ Hủy</button>
             </div>
         </div>
     </div>
@@ -280,13 +343,34 @@
                 <input type="text" id="scriptName" class="form-control" placeholder="Nhập tên script...">
             </div>
             <div class="task-controls">
-                <button class="btn btn-primary" id="confirmSaveScript">Lưu</button>
-                <button class="btn btn-secondary" id="cancelScriptManager">Hủy</button>
+                <button class="btn btn-primary" id="confirmSaveScript">💾 Lưu</button>
+                <button class="btn btn-secondary" id="cancelScriptManager">❌ Hủy</button>
             </div>
             <hr>
             <h4>Scripts đã lưu</h4>
             <div id="savedScripts" class="script-list">
                 <div class="empty-state">Chưa có script nào được lưu</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- File Picker Modal Template (will be created dynamically) -->
+    <div id="filePickerModalTemplate" style="display: none;">
+        <div class="modal-content" style="max-width: 500px;">
+            <div class="modal-header">
+                <h3>Chọn Files từ File Manager</h3>
+                <button class="close">&times;</button>
+            </div>
+            <div style="max-height: 300px; overflow-y: auto; border: 1px solid #ddd; margin: 10px 0;">
+                <div class="file-picker-list"></div>
+            </div>
+            <div style="margin: 10px 0; padding: 10px; background: #f9f9f9; border-radius: 4px;">
+                <strong>Đã chọn:</strong>
+                <div class="selected-files-list" style="margin-top: 5px; font-size: 11px; max-height: 60px; overflow-y: auto;"></div>
+            </div>
+            <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                <button class="confirm-file-picker btn btn-primary">✅ Xác nhận</button>
+                <button class="cancel-file-picker btn btn-secondary">❌ Hủy</button>
             </div>
         </div>
     </div>
@@ -298,5 +382,229 @@
     <script src="../js/file-manager.js"></script>
     <script src="../js/cookie-manager.js"></script>
     <script src="../js/slidebar.js"></script>
+
+    <!-- Additional CSS for new features -->
+    <style>
+        /* Enhanced step parameters */
+        .param-group {
+            margin-bottom: 12px;
+        }
+
+        .param-group label {
+            display: block;
+            font-size: 11px;
+            font-weight: 500;
+            color: #374151;
+            margin-bottom: 4px;
+        }
+
+        .param-group input,
+        .param-group select,
+        .param-group textarea {
+            width: 100%;
+            padding: 6px 8px;
+            border: 1px solid #e2e8f0;
+            border-radius: 4px;
+            font-size: 11px;
+        }
+
+        .param-group input:focus,
+        .param-group select:focus,
+        .param-group textarea:focus {
+            outline: none;
+            border-color: #4f46e5;
+            box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.1);
+        }
+
+        /* File picker styles */
+        .file-picker-container {
+            border: 1px solid #e2e8f0;
+            border-radius: 4px;
+            padding: 8px;
+            background: #f9fafb;
+        }
+
+        .file-picker-display {
+            min-height: 40px;
+            font-size: 11px;
+            color: #6b7280;
+            margin-bottom: 8px;
+            max-height: 100px;
+            overflow-y: auto;
+        }
+
+        .file-picker-browse {
+            padding: 4px 8px;
+            font-size: 11px;
+            background: #4f46e5;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .file-picker-browse:hover {
+            background: #4338ca;
+        }
+
+        /* Optgroup styling */
+        optgroup {
+            font-weight: bold;
+            font-style: normal;
+        }
+
+        optgroup option {
+            font-weight: normal;
+            padding-left: 15px;
+        }
+
+        /* Enhanced script step display */
+        .script-step {
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            margin-bottom: 8px;
+            background: white;
+            transition: all 0.2s ease;
+        }
+
+        .script-step:hover {
+            border-color: #4f46e5;
+            box-shadow: 0 2px 8px rgba(79, 70, 229, 0.1);
+        }
+
+        .script-step.script-running {
+            border-color: #10b981;
+            background: #f0fdf4;
+            box-shadow: 0 2px 8px rgba(16, 185, 129, 0.15);
+        }
+
+        .step-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            border-bottom: 1px solid #f1f5f9;
+        }
+
+        .step-type {
+            font-size: 12px;
+            font-weight: 600;
+            color: #1e293b;
+        }
+
+        .step-controls {
+            display: flex;
+            gap: 4px;
+        }
+
+        .step-controls button {
+            padding: 4px 6px;
+            font-size: 10px;
+            border: 1px solid #e2e8f0;
+            border-radius: 3px;
+            background: white;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .step-controls button:hover {
+            background: #f8fafc;
+            border-color: #4f46e5;
+        }
+
+        .step-controls .edit-btn {
+            background: #3b82f6;
+            color: white;
+            border-color: #3b82f6;
+        }
+
+        .step-controls .delete-btn {
+            background: #ef4444;
+            color: white;
+            border-color: #ef4444;
+        }
+
+        .step-details {
+            padding: 8px 12px;
+            font-size: 11px;
+            color: #64748b;
+            background: #f8fafc;
+        }
+
+        /* Viewport info styles */
+        .viewport-info {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 16px;
+            font-size: 11px;
+        }
+
+        .viewport-info h4 {
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #1e293b;
+            font-size: 12px;
+        }
+
+        /* Cookie file item styles */
+        .cookie-file-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            margin-bottom: 8px;
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            transition: all 0.2s ease;
+        }
+
+        .cookie-file-item:hover {
+            border-color: #4f46e5;
+            box-shadow: 0 2px 8px rgba(79, 70, 229, 0.1);
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 400px) {
+            .quick-actions {
+                grid-template-columns: 1fr 1fr;
+                gap: 8px;
+            }
+            
+            .action-card {
+                padding: 12px;
+            }
+            
+            .action-card .icon {
+                font-size: 20px;
+            }
+            
+            .action-card .title {
+                font-size: 11px;
+            }
+            
+            .action-card .desc {
+                font-size: 9px;
+            }
+        }
+
+        /* Animation for new elements */
+        .slide-in {
+            animation: slideIn 0.3s ease-out;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+    </style>
 </body>
 </html>
