@@ -1,4 +1,4 @@
-// Enhanced Web Automation Suite - Content Script with Tab Independence
+// Enhanced Web Automation Suite - Content Script with Full Step Support
 
 // ====================================================================
 // TAB IDENTIFICATION & STATE
@@ -171,6 +171,12 @@ window.addEventListener('message', (event) => {
                 href: window.location.href
             });
             break;
+        case 'getViewportInfo':
+            sendMessageToSidebar('viewportInfoResponse', getViewportInfo());
+            break;
+        case 'reloadPage':
+            window.location.reload();
+            break;
         default:
             console.log('Unknown sidebar message:', event.data);
     }
@@ -183,6 +189,32 @@ function sendMessageToSidebar(action, data = {}) {
             data: { ...data, tabId: getCurrentTabId() }
         }, '*');
     }
+}
+
+// ====================================================================
+// VIEWPORT INFO FUNCTIONS
+// ====================================================================
+function getViewportInfo() {
+    return {
+        viewport: {
+            width: window.innerWidth,
+            height: window.innerHeight
+        },
+        screen: {
+            width: window.screen.width,
+            height: window.screen.height
+        },
+        scroll: {
+            x: window.pageXOffset || document.documentElement.scrollLeft,
+            y: window.pageYOffset || document.documentElement.scrollTop
+        },
+        document: {
+            width: document.documentElement.scrollWidth,
+            height: document.documentElement.scrollHeight
+        },
+        devicePixelRatio: window.devicePixelRatio || 1,
+        tabId: getCurrentTabId()
+    };
 }
 
 // ====================================================================
@@ -260,6 +292,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 const pageInfo = getPageInfo();
                 sendResponse({ success: true, result: pageInfo, tabId: getCurrentTabId() });
                 break;
+
+            case "getViewportInfo":
+                const viewportInfo = getViewportInfo();
+                sendResponse({ success: true, result: viewportInfo, tabId: getCurrentTabId() });
+                break;
                 
             case "analyzePage":
                 const analysis = analyzePage();
@@ -289,6 +326,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     sendResponse({ success: false, error: error.message, tabId: getCurrentTabId() });
                 }
                 break;
+
+            // File operations for setInputFiles
+            case "getFileFromIndexedDB":
+                getFileFromIndexedDB(request.filePath)
+                    .then(fileBlob => sendResponse({ success: true, fileBlob, tabId: getCurrentTabId() }))
+                    .catch(error => sendResponse({ success: false, error: error.message, tabId: getCurrentTabId() }));
+                return true;
+
+            case "listFilesInIndexedDB":
+                listFilesInIndexedDB()
+                    .then(files => sendResponse({ success: true, files, tabId: getCurrentTabId() }))
+                    .catch(error => sendResponse({ success: false, error: error.message, tabId: getCurrentTabId() }));
+                return true;
                 
             default:
                 sendResponse({ success: false, error: "Unknown action", tabId: getCurrentTabId() });
@@ -620,13 +670,14 @@ function recordKeydown(event) {
 }
 
 // ====================================================================
-// AUTOMATION STEP EXECUTION - FIXED WITH ALL FUNCTIONS
+// AUTOMATION STEP EXECUTION - COMPLETE WITH ALL STEP TYPES
 // ====================================================================
 
 async function executeAutomationStep(step) {
     console.log(`Tab ${getCurrentTabId()}: Executing step:`, step);
     
     switch (step.type) {
+        // ===== CLASSIC ACTIONS =====
         case 'click':
             return await executeClickStep(step);
         case 'clickElement':
@@ -655,13 +706,36 @@ async function executeAutomationStep(step) {
             return await executeWaitForElementStep(step);
         case 'reload':
             return await executeReloadStep(step);
+
+        // ===== PLAYWRIGHT-STYLE LOCATORS =====
+        case 'getByRole':
+            return await executeGetByRoleStep(step);
+        case 'getByText':
+            return await executeGetByTextStep(step);
+        case 'getByPlaceholder':
+            return await executeGetByPlaceholderStep(step);
+
+        // ===== PLAYWRIGHT-STYLE ACTIONS =====
+        case 'fill':
+            return await executeFillStep(step);
+        case 'setInputFiles':
+            return await executeSetInputFilesStep(step);
+
+        // ===== DATA EXTRACTION =====
+        case 'innerText':
+            return await executeInnerTextStep(step);
+        case 'textContent':
+            return await executeTextContentStep(step);
+        case 'inputValue':
+            return await executeInputValueStep(step);
+
         default:
             throw new Error(`Loại bước không được hỗ trợ: ${step.type}`);
     }
 }
 
 // ====================================================================
-// STEP EXECUTION FUNCTIONS - ALL IMPLEMENTED
+// CLASSIC STEP EXECUTION FUNCTIONS - ENHANCED
 // ====================================================================
 
 async function executeClickStep(step) {
@@ -730,17 +804,59 @@ async function executeWaitStep(step) {
 }
 
 async function executeScrollStep(step) {
-    const x = parseInt(step.x) || 0;
-    const y = parseInt(step.y) || 0;
+    const currentScroll = {
+        x: window.pageXOffset || document.documentElement.scrollLeft,
+        y: window.pageYOffset || document.documentElement.scrollTop
+    };
+    
+    let targetX, targetY;
+    
+    // Handle percentage scrolling
+    if (step.percentageY !== undefined) {
+        const documentHeight = document.documentElement.scrollHeight - window.innerHeight;
+        targetY = (step.percentageY / 100) * documentHeight;
+        targetX = step.x || currentScroll.x;
+    }
+    // Handle delta scrolling (relative)
+    else if (step.delta !== undefined) {
+        targetX = currentScroll.x;
+        targetY = currentScroll.y + step.delta;
+    }
+    // Handle relative scrolling
+    else if (step.relative === true) {
+        targetX = currentScroll.x + (step.x || 0);
+        targetY = currentScroll.y + (step.y || 0);
+    }
+    // Handle absolute scrolling (default)
+    else {
+        targetX = parseInt(step.x) || 0;
+        targetY = parseInt(step.y) || 0;
+    }
+    
+    // Ensure scroll position is within bounds
+    const maxScrollX = document.documentElement.scrollWidth - window.innerWidth;
+    const maxScrollY = document.documentElement.scrollHeight - window.innerHeight;
+    
+    targetX = Math.max(0, Math.min(targetX, maxScrollX));
+    targetY = Math.max(0, Math.min(targetY, maxScrollY));
+    
     const smooth = step.smooth !== false;
     
     if (smooth) {
-        window.scrollTo({ left: x, top: y, behavior: 'smooth' });
+        window.scrollTo({ left: targetX, top: targetY, behavior: 'smooth' });
+        // Wait for smooth scroll to complete
+        await sleep(1000);
     } else {
-        window.scrollTo(x, y);
+        window.scrollTo(targetX, targetY);
     }
     
-    return { scrolled: true, x, y, smooth, tabId: getCurrentTabId() };
+    return { 
+        scrolled: true, 
+        from: currentScroll, 
+        to: { x: targetX, y: targetY }, 
+        smooth, 
+        tabId: getCurrentTabId() 
+    };
 }
 
 async function executeHoverStep(step) {
@@ -846,6 +962,402 @@ async function executeWaitForElementStep(step) {
 async function executeReloadStep(step) {
     window.location.reload();
     return { reloaded: true, tabId: getCurrentTabId() };
+}
+
+// ====================================================================
+// PLAYWRIGHT-STYLE LOCATOR FUNCTIONS
+// ====================================================================
+
+async function executeGetByRoleStep(step) {
+    const element = await findElementByRole(step.role, step.name, step.timeout || 5000);
+    
+    if (step.action === 'click') {
+        const rect = element.getBoundingClientRect();
+        const x = rect.left + rect.width / 2;
+        const y = rect.top + rect.height / 2;
+        
+        const clickEvent = new MouseEvent('click', {
+            view: window, bubbles: true, cancelable: true, clientX: x, clientY: y
+        });
+        
+        element.dispatchEvent(clickEvent);
+        showClickFeedback(x, y, '#10b981');
+        
+        return { role: step.role, name: step.name, action: 'click', clicked: true, tabId: getCurrentTabId() };
+    } else if (step.action === 'hover') {
+        const rect = element.getBoundingClientRect();
+        const x = rect.left + rect.width / 2;
+        const y = rect.top + rect.height / 2;
+        
+        const hoverEvent = new MouseEvent('mouseenter', {
+            view: window, bubbles: true, cancelable: true, clientX: x, clientY: y
+        });
+        
+        element.dispatchEvent(hoverEvent);
+        
+        return { role: step.role, name: step.name, action: 'hover', hovered: true, tabId: getCurrentTabId() };
+    }
+    
+    return { role: step.role, name: step.name, found: true, tabId: getCurrentTabId() };
+}
+
+async function executeGetByTextStep(step) {
+    const element = await findElementByText(step.text, step.timeout || 5000);
+    
+    if (step.action === 'click') {
+        const rect = element.getBoundingClientRect();
+        const x = rect.left + rect.width / 2;
+        const y = rect.top + rect.height / 2;
+        
+        const clickEvent = new MouseEvent('click', {
+            view: window, bubbles: true, cancelable: true, clientX: x, clientY: y
+        });
+        
+        element.dispatchEvent(clickEvent);
+        showClickFeedback(x, y, '#10b981');
+        
+        return { text: step.text, action: 'click', clicked: true, tabId: getCurrentTabId() };
+    } else if (step.action === 'hover') {
+        const rect = element.getBoundingClientRect();
+        const x = rect.left + rect.width / 2;
+        const y = rect.top + rect.height / 2;
+        
+        const hoverEvent = new MouseEvent('mouseenter', {
+            view: window, bubbles: true, cancelable: true, clientX: x, clientY: y
+        });
+        
+        element.dispatchEvent(hoverEvent);
+        
+        return { text: step.text, action: 'hover', hovered: true, tabId: getCurrentTabId() };
+    }
+    
+    return { text: step.text, found: true, tabId: getCurrentTabId() };
+}
+
+async function executeGetByPlaceholderStep(step) {
+    const element = await findElementByPlaceholder(step.placeholder, step.timeout || 5000);
+    
+    if (step.action === 'fill' && step.value) {
+        element.focus();
+        element.value = '';
+        element.value = step.value;
+        element.dispatchEvent(new Event('input', { bubbles: true }));
+        element.dispatchEvent(new Event('change', { bubbles: true }));
+        
+        return { placeholder: step.placeholder, action: 'fill', value: step.value, filled: true, tabId: getCurrentTabId() };
+    } else if (step.action === 'click') {
+        const rect = element.getBoundingClientRect();
+        const x = rect.left + rect.width / 2;
+        const y = rect.top + rect.height / 2;
+        
+        const clickEvent = new MouseEvent('click', {
+            view: window, bubbles: true, cancelable: true, clientX: x, clientY: y
+        });
+        
+        element.dispatchEvent(clickEvent);
+        showClickFeedback(x, y, '#10b981');
+        
+        return { placeholder: step.placeholder, action: 'click', clicked: true, tabId: getCurrentTabId() };
+    }
+    
+    return { placeholder: step.placeholder, found: true, tabId: getCurrentTabId() };
+}
+
+// ====================================================================
+// PLAYWRIGHT-STYLE ACTION FUNCTIONS
+// ====================================================================
+
+async function executeFillStep(step) {
+    const element = await waitForSelector(step.selector, step.timeout || 5000);
+    element.focus();
+    
+    // Clear existing content
+    element.value = '';
+    element.textContent = '';
+    
+    // Fill with new content
+    const text = step.text || '';
+    element.value = text;
+    element.textContent = text;
+    
+    // Dispatch events
+    element.dispatchEvent(new Event('input', { bubbles: true }));
+    element.dispatchEvent(new Event('change', { bubbles: true }));
+    
+    return { selector: step.selector, text: text, filled: true, tabId: getCurrentTabId() };
+}
+
+async function executeSetInputFilesStep(step) {
+    const element = await waitForSelector(step.selector, step.timeout || 5000);
+    
+    if (element.type !== 'file') {
+        throw new Error(`Element ${step.selector} is not a file input`);
+    }
+    
+    const filePaths = Array.isArray(step.filePaths) ? step.filePaths : [step.filePaths];
+    
+    // Get files from IndexedDB
+    const fileBlobs = [];
+    for (const filePath of filePaths) {
+        try {
+            const fileBlob = await getFileFromIndexedDB(filePath);
+            fileBlobs.push(fileBlob);
+        } catch (error) {
+            console.warn(`Could not load file ${filePath}:`, error);
+        }
+    }
+    
+    if (fileBlobs.length === 0) {
+        throw new Error('No valid files found to upload');
+    }
+    
+    // Create DataTransfer object to simulate file selection
+    const dataTransfer = new DataTransfer();
+    fileBlobs.forEach(blob => {
+        dataTransfer.items.add(blob);
+    });
+    
+    // Set files on input element
+    element.files = dataTransfer.files;
+    
+    // Dispatch change event
+    element.dispatchEvent(new Event('change', { bubbles: true }));
+    
+    return { 
+        selector: step.selector, 
+        fileCount: fileBlobs.length, 
+        filePaths: filePaths, 
+        uploaded: true, 
+        tabId: getCurrentTabId() 
+    };
+}
+
+// ====================================================================
+// DATA EXTRACTION FUNCTIONS
+// ====================================================================
+
+async function executeInnerTextStep(step) {
+    const element = await waitForSelector(step.selector, step.timeout || 5000);
+    const text = element.innerText;
+    
+    return { selector: step.selector, innerText: text, tabId: getCurrentTabId() };
+}
+
+async function executeTextContentStep(step) {
+    const element = await waitForSelector(step.selector, step.timeout || 5000);
+    const text = element.textContent;
+    
+    return { selector: step.selector, textContent: text, tabId: getCurrentTabId() };
+}
+
+async function executeInputValueStep(step) {
+    const element = await waitForSelector(step.selector, step.timeout || 5000);
+    const value = element.value;
+    
+    return { selector: step.selector, inputValue: value, tabId: getCurrentTabId() };
+}
+
+// ====================================================================
+// PLAYWRIGHT-STYLE HELPER FUNCTIONS
+// ====================================================================
+
+function findElementByRole(role, name, timeout = 5000) {
+    return new Promise((resolve, reject) => {
+        const findElement = () => {
+            // Common role to element mappings
+            const roleSelectors = {
+                'button': 'button, input[type="button"], input[type="submit"], [role="button"]',
+                'link': 'a, [role="link"]',
+                'textbox': 'input[type="text"], input[type="email"], input[type="password"], textarea, [role="textbox"]',
+                'checkbox': 'input[type="checkbox"], [role="checkbox"]',
+                'radio': 'input[type="radio"], [role="radio"]',
+                'menuitem': '[role="menuitem"]',
+                'tab': '[role="tab"]',
+                'option': 'option, [role="option"]'
+            };
+            
+            const selector = roleSelectors[role] || `[role="${role}"]`;
+            const elements = document.querySelectorAll(selector);
+            
+            for (const element of elements) {
+                const elementText = element.textContent || element.value || element.getAttribute('aria-label') || element.getAttribute('title');
+                if (elementText && elementText.trim().toLowerCase().includes(name.toLowerCase())) {
+                    return element;
+                }
+            }
+            
+            return null;
+        };
+        
+        const element = findElement();
+        if (element) {
+            resolve(element);
+            return;
+        }
+        
+        const observer = new MutationObserver(() => {
+            const element = findElement();
+            if (element) {
+                observer.disconnect();
+                resolve(element);
+            }
+        });
+        
+        observer.observe(document.body, { childList: true, subtree: true });
+        
+        setTimeout(() => {
+            observer.disconnect();
+            reject(new Error(`Tab ${getCurrentTabId()}: Element with role "${role}" and name "${name}" not found within ${timeout}ms`));
+        }, timeout);
+    });
+}
+
+function findElementByText(text, timeout = 5000) {
+    return new Promise((resolve, reject) => {
+        const findElement = () => {
+            const walker = document.createTreeWalker(
+                document.body,
+                NodeFilter.SHOW_TEXT,
+                null,
+                false
+            );
+            
+            let node;
+            while (node = walker.nextNode()) {
+                if (node.textContent.trim().toLowerCase().includes(text.toLowerCase())) {
+                    let element = node.parentElement;
+                    // Find the closest clickable element
+                    while (element && element !== document.body) {
+                        if (element.tagName === 'BUTTON' || 
+                            element.tagName === 'A' || 
+                            element.onclick || 
+                            element.getAttribute('role') === 'button' ||
+                            getComputedStyle(element).cursor === 'pointer') {
+                            return element;
+                        }
+                        element = element.parentElement;
+                    }
+                    // If no clickable parent found, return the text node's parent
+                    return node.parentElement;
+                }
+            }
+            
+            return null;
+        };
+        
+        const element = findElement();
+        if (element) {
+            resolve(element);
+            return;
+        }
+        
+        const observer = new MutationObserver(() => {
+            const element = findElement();
+            if (element) {
+                observer.disconnect();
+                resolve(element);
+            }
+        });
+        
+        observer.observe(document.body, { childList: true, subtree: true });
+        
+        setTimeout(() => {
+            observer.disconnect();
+            reject(new Error(`Tab ${getCurrentTabId()}: Element with text "${text}" not found within ${timeout}ms`));
+        }, timeout);
+    });
+}
+
+function findElementByPlaceholder(placeholder, timeout = 5000) {
+    return new Promise((resolve, reject) => {
+        const findElement = () => {
+            const elements = document.querySelectorAll('input, textarea');
+            for (const element of elements) {
+                const placeholderText = element.getAttribute('placeholder');
+                if (placeholderText && placeholderText.toLowerCase().includes(placeholder.toLowerCase())) {
+                    return element;
+                }
+            }
+            return null;
+        };
+        
+        const element = findElement();
+        if (element) {
+            resolve(element);
+            return;
+        }
+        
+        const observer = new MutationObserver(() => {
+            const element = findElement();
+            if (element) {
+                observer.disconnect();
+                resolve(element);
+            }
+        });
+        
+        observer.observe(document.body, { childList: true, subtree: true });
+        
+        setTimeout(() => {
+            observer.disconnect();
+            reject(new Error(`Tab ${getCurrentTabId()}: Element with placeholder "${placeholder}" not found within ${timeout}ms`));
+        }, timeout);
+    });
+}
+
+// ====================================================================
+// FILE OPERATIONS FOR SETINPUTFILES
+// ====================================================================
+
+async function getFileFromIndexedDB(filePath) {
+    return new Promise((resolve, reject) => {
+        // Check if we have access to IndexedDB helper
+        if (!window.dbHelper) {
+            reject(new Error('IndexedDB helper not available'));
+            return;
+        }
+        
+        // Parse file path (folder/filename or just filename)
+        const pathParts = filePath.split('/');
+        const fileName = pathParts[pathParts.length - 1];
+        const folderPath = pathParts.length > 1 ? pathParts.slice(0, -1).join('/') : '';
+        
+        window.dbHelper.getAllFiles().then(files => {
+            const file = files.find(f => 
+                f.name === fileName && (f.folderPath || '') === folderPath
+            );
+            
+            if (!file) {
+                reject(new Error(`File not found: ${filePath}`));
+                return;
+            }
+            
+            // Convert data URL to blob
+            fetch(file.data)
+                .then(response => response.blob())
+                .then(blob => {
+                    // Create File object with original name and type
+                    const fileObject = new File([blob], file.name, { type: file.type });
+                    resolve(fileObject);
+                })
+                .catch(error => reject(error));
+                
+        }).catch(error => reject(error));
+    });
+}
+
+async function listFilesInIndexedDB() {
+    if (!window.dbHelper) {
+        throw new Error('IndexedDB helper not available');
+    }
+    
+    const files = await window.dbHelper.getAllFiles();
+    return files.map(file => ({
+        name: file.name,
+        path: file.folderPath ? `${file.folderPath}/${file.name}` : file.name,
+        size: file.size,
+        type: file.type,
+        uploadDate: file.uploadDate
+    }));
 }
 
 // ====================================================================

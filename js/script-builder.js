@@ -1,4 +1,4 @@
-// Enhanced Script Builder with Playwright Export & New Options
+// Enhanced Script Builder with Playwright Export & Enhanced Scroll Options
 class EnhancedScriptBuilder {
     constructor() {
         this.steps = [];
@@ -157,11 +157,17 @@ class EnhancedScriptBuilder {
             wait: [
                 { name: 'duration', label: 'Thời gian chờ (ms)', type: 'number', required: true, default: 1000 }
             ],
+            // ENHANCED SCROLL with multiple modes
             scroll: [
-                { name: 'x', label: 'Vị trí X', type: 'number', default: 0 },
-                { name: 'y', label: 'Vị trí Y', type: 'number', required: true },
-                { name: 'smooth', label: 'Scroll mượt', type: 'checkbox', default: true },
-                { name: 'delta', label: 'Scroll theo delta (px)', type: 'number', placeholder: '100 = scroll down 100px' }
+                { name: 'scrollMode', label: 'Chế độ scroll', type: 'select', 
+                  options: ['absolute', 'relative', 'percentage', 'delta'], default: 'absolute',
+                  help: 'absolute: tọa độ tuyệt đối, relative: từ vị trí hiện tại, percentage: theo %, delta: scroll một khoảng' },
+                { name: 'x', label: 'Vị trí X (absolute/relative)', type: 'number', default: 0 },
+                { name: 'y', label: 'Vị trí Y (absolute/relative)', type: 'number', default: 0 },
+                { name: 'percentageX', label: 'Phần trăm X (0-100)', type: 'number', placeholder: '0-100' },
+                { name: 'percentageY', label: 'Phần trăm Y (0-100)', type: 'number', placeholder: '0-100' },
+                { name: 'delta', label: 'Delta Y (px)', type: 'number', placeholder: '100 = scroll down 100px, -100 = scroll up' },
+                { name: 'smooth', label: 'Scroll mượt', type: 'checkbox', default: true }
             ],
             hover: [
                 { name: 'selector', label: 'CSS Selector', type: 'text', required: true },
@@ -317,6 +323,55 @@ class EnhancedScriptBuilder {
 
             paramGroup.appendChild(input);
             paramsContainer.appendChild(paramGroup);
+
+            // Add scroll mode specific logic
+            if (stepType === 'scroll' && param.name === 'scrollMode') {
+                input.addEventListener('change', () => {
+                    this.updateScrollParameterVisibility(input.value);
+                });
+                // Set initial visibility
+                this.updateScrollParameterVisibility(input.value);
+            }
+        });
+    }
+
+    updateScrollParameterVisibility(scrollMode) {
+        const params = document.querySelectorAll('#stepParams .param-group');
+        
+        params.forEach(paramGroup => {
+            const input = paramGroup.querySelector('[data-param-name]');
+            if (!input) return;
+            
+            const paramName = input.dataset.paramName;
+            
+            // Hide all mode-specific parameters first
+            if (['x', 'y', 'percentageX', 'percentageY', 'delta'].includes(paramName)) {
+                paramGroup.style.display = 'none';
+                input.required = false;
+            }
+            
+            // Show relevant parameters based on mode
+            switch (scrollMode) {
+                case 'absolute':
+                case 'relative':
+                    if (['x', 'y'].includes(paramName)) {
+                        paramGroup.style.display = 'block';
+                        if (paramName === 'y') input.required = true;
+                    }
+                    break;
+                case 'percentage':
+                    if (['percentageX', 'percentageY'].includes(paramName)) {
+                        paramGroup.style.display = 'block';
+                        if (paramName === 'percentageY') input.required = true;
+                    }
+                    break;
+                case 'delta':
+                    if (paramName === 'delta') {
+                        paramGroup.style.display = 'block';
+                        input.required = true;
+                    }
+                    break;
+            }
         });
     }
 
@@ -533,6 +588,35 @@ class EnhancedScriptBuilder {
             }
         });
 
+        // Special handling for scroll step
+        if (stepType === 'scroll') {
+            const scrollMode = stepData.scrollMode || 'absolute';
+            
+            // Set the correct mode flags
+            stepData.relative = scrollMode === 'relative';
+            
+            // Clean up unused parameters based on mode
+            switch (scrollMode) {
+                case 'absolute':
+                case 'relative':
+                    delete stepData.percentageX;
+                    delete stepData.percentageY;
+                    delete stepData.delta;
+                    break;
+                case 'percentage':
+                    delete stepData.x;
+                    delete stepData.y;
+                    delete stepData.delta;
+                    break;
+                case 'delta':
+                    delete stepData.x;
+                    delete stepData.y;
+                    delete stepData.percentageX;
+                    delete stepData.percentageY;
+                    break;
+            }
+        }
+
         if (!isValid) {
             this.showAlert('Vui lòng điền đầy đủ thông tin bắt buộc.', 'error');
             return;
@@ -585,6 +669,20 @@ class EnhancedScriptBuilder {
                     }
                 }
             });
+
+            // Special handling for scroll step editing
+            if (step.type === 'scroll') {
+                let scrollMode = 'absolute';
+                if (step.relative) scrollMode = 'relative';
+                else if (step.percentageY !== undefined) scrollMode = 'percentage';
+                else if (step.delta !== undefined) scrollMode = 'delta';
+                
+                const scrollModeInput = document.querySelector('[data-param-name="scrollMode"]');
+                if (scrollModeInput) {
+                    scrollModeInput.value = scrollMode;
+                    this.updateScrollParameterVisibility(scrollMode);
+                }
+            }
         }, 100);
 
         document.getElementById('addStepModal').style.display = 'block';
@@ -728,7 +826,16 @@ class EnhancedScriptBuilder {
             case 'wait':
                 return `Thời gian: ${step.duration}ms`;
             case 'scroll':
-                return `Vị trí: (${step.x || 0}, ${step.y})${step.delta ? `, Delta: ${step.delta}px` : ''}, Smooth: ${step.smooth ? 'Có' : 'Không'}`;
+                let scrollDesc = '';
+                if (step.delta !== undefined) {
+                    scrollDesc = `Delta: ${step.delta}px`;
+                } else if (step.percentageY !== undefined) {
+                    scrollDesc = `Phần trăm: X=${step.percentageX || 0}%, Y=${step.percentageY}%`;
+                } else {
+                    const mode = step.relative ? 'tương đối' : 'tuyệt đối';
+                    scrollDesc = `${mode}: (${step.x || 0}, ${step.y})`;
+                }
+                return `${scrollDesc}, Smooth: ${step.smooth ? 'Có' : 'Không'}`;
             case 'hover':
                 return `Selector: ${step.selector}`;
             case 'selectOption':
@@ -764,7 +871,7 @@ class EnhancedScriptBuilder {
     }
 
     // ====================================================================
-    // PLAYWRIGHT EXPORT FUNCTIONALITY
+    // PLAYWRIGHT EXPORT FUNCTIONALITY - ENHANCED
     // ====================================================================
 
     exportToPlaywright() {
@@ -829,10 +936,24 @@ class EnhancedScriptBuilder {
                 return `  await page.waitForSelector('${step.selector}', { timeout: ${step.timeout || 30000} });`;
 
             case 'scroll':
-                if (step.delta) {
+                if (step.delta !== undefined) {
                     return `  await page.mouse.wheel(0, ${step.delta});`;
+                } else if (step.percentageY !== undefined) {
+                    return `  await page.evaluate(() => {
+    const maxY = document.documentElement.scrollHeight - window.innerHeight;
+    const targetY = (${step.percentageY} / 100) * maxY;
+    window.scrollTo(${step.percentageX || 0}, targetY);
+  });`;
                 } else {
-                    return `  await page.evaluate(() => window.scrollTo(${step.x || 0}, ${step.y}));`;
+                    if (step.relative) {
+                        return `  await page.evaluate(() => {
+    const currentX = window.pageXOffset;
+    const currentY = window.pageYOffset;
+    window.scrollTo(currentX + ${step.x || 0}, currentY + ${step.y || 0});
+  });`;
+                    } else {
+                        return `  await page.evaluate(() => window.scrollTo(${step.x || 0}, ${step.y}));`;
+                    }
                 }
 
             case 'hover':

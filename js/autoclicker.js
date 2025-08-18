@@ -1,4 +1,4 @@
-// Enhanced Auto Clicker for Sidebar UI - Fixed Coordinate Selection + Viewport Info
+// Enhanced Auto Clicker for Sidebar UI - Enhanced Viewport Info Display
 document.addEventListener('DOMContentLoaded', () => {
     // Check if we're in the sidebar iframe
     if (window.self === window.top) {
@@ -44,7 +44,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const yCoordEl = document.getElementById('yCoord');
 
     // ====================================================================
-    // VIEWPORT INFO DISPLAY
+    // ENHANCED VIEWPORT INFO DISPLAY
     // ====================================================================
     
     function updateViewportInfo() {
@@ -75,27 +75,69 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
+        // Enhanced viewport information display
+        const zoomLevel = Math.round(viewportData.devicePixelRatio * 100);
+        const aspectRatio = (viewportData.viewport.width / viewportData.viewport.height).toFixed(2);
+        
         viewportContainer.innerHTML = `
-            <div style="font-weight: 600; margin-bottom: 8px; color: #1e293b;">📐 Thông tin Browser</div>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-                <div>
-                    <div style="color: #64748b; font-size: 9px;">Viewport</div>
-                    <div style="font-weight: 500;">${viewportData.viewport.width} × ${viewportData.viewport.height}</div>
+            <div style="font-weight: 600; margin-bottom: 8px; color: #1e293b; display: flex; align-items: center; gap: 6px;">
+                📐 Thông tin Browser & Viewport
+                <button id="refreshViewport" style="padding: 2px 6px; font-size: 9px; background: #4f46e5; color: white; border: none; border-radius: 3px; cursor: pointer;" title="Refresh viewport info">🔄</button>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+                <div style="background: #f8fafc; padding: 8px; border-radius: 4px;">
+                    <div style="color: #64748b; font-size: 9px; margin-bottom: 2px;">🖥️ Browser Viewport</div>
+                    <div style="font-weight: 600; color: #1e293b;">${viewportData.viewport.width} × ${viewportData.viewport.height}</div>
+                    <div style="font-size: 9px; color: #64748b;">Tỷ lệ: ${aspectRatio}</div>
                 </div>
-                <div>
-                    <div style="color: #64748b; font-size: 9px;">Screen</div>
-                    <div style="font-weight: 500;">${viewportData.screen.width} × ${viewportData.screen.height}</div>
+                <div style="background: #f8fafc; padding: 8px; border-radius: 4px;">
+                    <div style="color: #64748b; font-size: 9px; margin-bottom: 2px;">🖱️ Vùng click hiện tại</div>
+                    <div style="font-weight: 600; color: #1e293b;">${viewportData.viewport.width} × ${viewportData.viewport.height}</div>
+                    <div style="font-size: 9px; color: #64748b;">Có thể click</div>
                 </div>
-                <div>
-                    <div style="color: #64748b; font-size: 9px;">Zoom</div>
-                    <div style="font-weight: 500;">${Math.round(viewportData.devicePixelRatio * 100)}%</div>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+                <div style="background: #fefbf3; padding: 8px; border-radius: 4px;">
+                    <div style="color: #64748b; font-size: 9px; margin-bottom: 2px;">🖥️ Screen Physical</div>
+                    <div style="font-weight: 600; color: #1e293b;">${viewportData.screen.width} × ${viewportData.screen.height}</div>
+                    <div style="font-size: 9px; color: #64748b;">Màn hình vật lý</div>
                 </div>
-                <div>
-                    <div style="color: #64748b; font-size: 9px;">Scroll</div>
-                    <div style="font-weight: 500;">${viewportData.scroll.x}, ${viewportData.scroll.y}</div>
+                <div style="background: #fefbf3; padding: 8px; border-radius: 4px;">
+                    <div style="color: #64748b; font-size: 9px; margin-bottom: 2px;">🔍 Zoom Level</div>
+                    <div style="font-weight: 600; color: #1e293b;">${zoomLevel}%</div>
+                    <div style="font-size: 9px; color: #64748b;">DPR: ${viewportData.devicePixelRatio}</div>
+                </div>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+                <div style="background: #f0f9ff; padding: 8px; border-radius: 4px;">
+                    <div style="color: #64748b; font-size: 9px; margin-bottom: 2px;">📄 Document Size</div>
+                    <div style="font-weight: 600; color: #1e293b;">${viewportData.document.width} × ${viewportData.document.height}</div>
+                    <div style="font-size: 9px; color: #64748b;">Toàn bộ trang</div>
+                </div>
+                <div style="background: #f0f9ff; padding: 8px; border-radius: 4px;">
+                    <div style="color: #64748b; font-size: 9px; margin-bottom: 2px;">📜 Scroll Position</div>
+                    <div style="font-weight: 600; color: #1e293b;">${viewportData.scroll.x}, ${viewportData.scroll.y}</div>
+                    <div style="font-size: 9px; color: #64748b;">X, Y</div>
+                </div>
+            </div>
+            <div style="background: #f0fdf4; padding: 8px; border-radius: 4px; border: 1px solid #dcfce7;">
+                <div style="color: #166534; font-size: 9px; margin-bottom: 4px;">💡 Thông tin quan trọng:</div>
+                <div style="font-size: 9px; color: #166534; line-height: 1.3;">
+                    • Tọa độ click: 0 ↔ ${viewportData.viewport.width}, 0 ↔ ${viewportData.viewport.height}<br>
+                    • Scroll max: X=${Math.max(0, viewportData.document.width - viewportData.viewport.width)}, Y=${Math.max(0, viewportData.document.height - viewportData.viewport.height)}<br>
+                    • Mapping tỷ lệ: ${zoomLevel}% zoom level
                 </div>
             </div>
         `;
+
+        // Add refresh button event listener
+        const refreshBtn = viewportContainer.querySelector('#refreshViewport');
+        if (refreshBtn) {
+            refreshBtn.addEventListener('click', () => {
+                updateViewportInfo();
+                showAlert('Đã refresh thông tin viewport!', 'success');
+            });
+        }
     }
 
     // ====================================================================
@@ -338,6 +380,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                     
                     resetSelectionButton();
+                    // Refresh viewport info after coordinate selection
+                    updateViewportInfo();
                 }
                 break;
                 
@@ -413,6 +457,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                     
                     resetSelectionButton();
+                    // Refresh viewport info after coordinate selection
+                    updateViewportInfo();
                 }
                 break;
         }
@@ -444,6 +490,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         showAlert(`Tab ${currentTabId}: Đã chọn tọa độ (${coords.x}, ${coords.y})`, 'success');
+        
+        // Update viewport info to show the coordinate context
+        updateViewportInfo();
     }
 
     function updateClickingUI(isRunning) {
@@ -602,12 +651,19 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Update viewport info every 5 seconds
+    // Update viewport info every 5 seconds for real-time monitoring
     setInterval(() => {
         if (currentTabId) {
             updateViewportInfo();
         }
     }, 5000);
 
-    console.log('Enhanced Auto Clicker sidebar initialized');
+    // Also update when window is resized or scrolled (via parent communication)
+    window.addEventListener('focus', () => {
+        if (currentTabId) {
+            updateViewportInfo();
+        }
+    });
+
+    console.log('Enhanced Auto Clicker sidebar initialized with improved viewport monitoring');
 });

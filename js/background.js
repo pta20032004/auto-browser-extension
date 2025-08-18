@@ -3,9 +3,10 @@ let clickIntervals = new Map(); // Map tabId -> interval
 let runningStates = new Map(); // Map tabId -> { isRunning, clickCount, maxClicks }
 let tabCoordinates = new Map(); // Map tabId -> { x, y }
 let tabViewportInfo = new Map(); // Map tabId -> viewport info
+let tabScrollState = new Map(); // Map tabId -> scroll state for enhanced scroll
 
 // ====================================================================
-// TAB STATE MANAGEMENT
+// TAB STATE MANAGEMENT - ENHANCED
 // ====================================================================
 function getTabState(tabId) {
     if (!runningStates.has(tabId)) {
@@ -38,6 +39,17 @@ function getTabViewport(tabId) {
 
 function setTabViewport(tabId, viewport) {
     tabViewportInfo.set(tabId, viewport);
+    // Store timestamp for freshness tracking
+    viewport.lastUpdated = Date.now();
+    console.log(`Viewport updated for tab ${tabId}:`, viewport);
+}
+
+function getTabScrollState(tabId) {
+    return tabScrollState.get(tabId) || { x: 0, y: 0, lastScrollTime: 0 };
+}
+
+function setTabScrollState(tabId, scrollState) {
+    tabScrollState.set(tabId, { ...scrollState, lastScrollTime: Date.now() });
 }
 
 // Clean up when tab is closed
@@ -46,6 +58,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
     runningStates.delete(tabId);
     tabCoordinates.delete(tabId);
     tabViewportInfo.delete(tabId);
+    tabScrollState.delete(tabId);
     chrome.storage.local.remove([`coords_${tabId}`]);
     console.log(`Cleaned up state for closed tab: ${tabId}`);
 });
@@ -90,7 +103,7 @@ chrome.action.onClicked.addListener((tab) => {
 });
 
 // ====================================================================
-// MESSAGE LISTENER - ENHANCED
+// MESSAGE LISTENER - ENHANCED WITH ALL STEP TYPES
 // ====================================================================
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     const tabId = sender.tab?.id || request.tabId;
@@ -112,9 +125,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 const state = getTabState(tabId);
                 const coords = getTabCoords(tabId);
                 const viewport = getTabViewport(tabId);
+                const scrollState = getTabScrollState(tabId);
                 sendResponse({ 
                     success: true, 
-                    state: { ...state, coords, viewport },
+                    state: { ...state, coords, viewport, scrollState },
                     tabId 
                 });
                 break;
@@ -126,6 +140,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
             case "setTabViewport":
                 setTabViewport(tabId, request.viewport);
+                sendResponse({ success: true, tabId });
+                break;
+
+            case "setTabScrollState":
+                setTabScrollState(tabId, request.scrollState);
                 sendResponse({ success: true, tabId });
                 break;
                 
@@ -185,6 +204,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                         console.log('Could not notify tab:', tabId);
                     }
                 });
+                sendResponse({ success: true, tabId });
+                break;
+
+            // Enhanced scroll operations
+            case "updateScrollState":
+                setTabScrollState(tabId, request.scrollState);
                 sendResponse({ success: true, tabId });
                 break;
 
@@ -304,7 +329,7 @@ function stopAutoClickForTab(tabId) {
 }
 
 // ====================================================================
-// TAB-SPECIFIC SCRIPT EXECUTION - ENHANCED
+// TAB-SPECIFIC SCRIPT EXECUTION - ENHANCED WITH ALL STEP TYPES
 // ====================================================================
 async function executeAutomationScriptForTab(tabId, script) {
     const steps = script.steps || script;
@@ -336,6 +361,25 @@ function executeStepForTab(tabId, step) {
                 return;
             }
             
+            // Validate step type before execution
+            const supportedStepTypes = [
+                // Classic actions
+                'click', 'clickElement', 'type', 'wait', 'scroll', 'hover', 'press', 
+                'goto', 'selectOption', 'check', 'getText', 'getAttribute', 
+                'waitForElement', 'reload',
+                // Playwright-style locators  
+                'getByRole', 'getByText', 'getByPlaceholder',
+                // Playwright-style actions
+                'fill', 'setInputFiles',
+                // Data extraction
+                'innerText', 'textContent', 'inputValue'
+            ];
+
+            if (!supportedStepTypes.includes(step.type)) {
+                reject(new Error(`Unsupported step type: ${step.type}. Supported types: ${supportedStepTypes.join(', ')}`));
+                return;
+            }
+
             chrome.tabs.sendMessage(tabId, {
                 action: "executeStep",
                 step: step,
@@ -354,6 +398,13 @@ function executeStepForTab(tabId, step) {
                             }
                             
                             if (retryResponse?.success) {
+                                // Update scroll state if this was a scroll step
+                                if (step.type === 'scroll' && retryResponse.result) {
+                                    const scrollResult = retryResponse.result;
+                                    if (scrollResult.to) {
+                                        setTabScrollState(tabId, scrollResult.to);
+                                    }
+                                }
                                 resolve(retryResponse.result);
                             } else {
                                 reject(new Error(retryResponse?.error || 'Step execution failed'));
@@ -364,6 +415,13 @@ function executeStepForTab(tabId, step) {
                 }
                 
                 if (response?.success) {
+                    // Update scroll state if this was a scroll step
+                    if (step.type === 'scroll' && response.result) {
+                        const scrollResult = response.result;
+                        if (scrollResult.to) {
+                            setTabScrollState(tabId, scrollResult.to);
+                        }
+                    }
                     resolve(response.result);
                 } else {
                     reject(new Error(response?.error || 'Step execution failed'));
@@ -374,7 +432,7 @@ function executeStepForTab(tabId, step) {
 }
 
 // ====================================================================
-// PAGE INFO FOR SPECIFIC TAB - ENHANCED
+// PAGE INFO FOR SPECIFIC TAB - ENHANCED WITH VIEWPORT
 // ====================================================================
 async function getPageInfoForTab(tabId) {
     return new Promise((resolve, reject) => {
@@ -421,9 +479,15 @@ async function getViewportInfoForTab(tabId) {
                 }
                 
                 if (response?.success) {
-                    // Cache viewport info
-                    setTabViewport(tabId, response.result);
-                    resolve({ ...response.result, tabId });
+                    // Cache viewport info with enhanced data
+                    const enhancedViewport = {
+                        ...response.result,
+                        tabId,
+                        lastUpdated: Date.now(),
+                        userAgent: tab.userAgent || 'unknown'
+                    };
+                    setTabViewport(tabId, enhancedViewport);
+                    resolve(enhancedViewport);
                 } else {
                     reject(new Error(response?.error || 'Failed to get viewport info'));
                 }
@@ -623,7 +687,6 @@ async function clearCookiesForTab(tabId, url) {
 
 async function getFileFromIndexedDBForTab(tabId, filePath) {
     // This would need to interact with the content script's IndexedDB
-    // For now, we'll return a placeholder
     return new Promise((resolve, reject) => {
         chrome.tabs.sendMessage(tabId, {
             action: "getFileFromIndexedDB",
@@ -745,22 +808,39 @@ chrome.runtime.onInstalled.addListener((details) => {
     if (details.reason === 'install') {
         showNotification(
             'Cài đặt thành công!', 
-            'Web Automation Suite v4.1 đã sẵn sàng. Nhấn vào icon để bắt đầu.'
+            'Web Automation Suite v4.1 đã sẵn sàng với Enhanced Scroll & Playwright support.'
         );
     } else if (details.reason === 'update') {
         showNotification(
             'Cập nhật thành công!', 
-            'Web Automation Suite v4.1 với Playwright Export và các tính năng mới.'
+            'v4.1: Enhanced Scroll (4 modes), Real-time Viewport, All Step Types Fixed!'
         );
     }
 
-    // Set default settings
-    chrome.storage.local.get(['defaultDelay', 'defaultMaxClicks'], (result) => {
-        if (!result.defaultDelay) {
-            chrome.storage.local.set({ defaultDelay: 1000 });
-        }
-        if (!result.defaultMaxClicks) {
-            chrome.storage.local.set({ defaultMaxClicks: 100 });
+    // Set default settings with new features
+    chrome.storage.local.get([
+        'defaultDelay', 'defaultMaxClicks', 'defaultScrollMode', 
+        'defaultSmoothScroll', 'autoRefreshViewport', 'viewportRefreshInterval'
+    ], (result) => {
+        const defaults = {
+            defaultDelay: 1000,
+            defaultMaxClicks: 100,
+            defaultScrollMode: 'absolute',
+            defaultSmoothScroll: true,
+            autoRefreshViewport: true,
+            viewportRefreshInterval: 5
+        };
+
+        const updates = {};
+        Object.keys(defaults).forEach(key => {
+            if (result[key] === undefined) {
+                updates[key] = defaults[key];
+            }
+        });
+
+        if (Object.keys(updates).length > 0) {
+            chrome.storage.local.set(updates);
+            console.log('Set default settings:', updates);
         }
     });
 });
@@ -774,7 +854,7 @@ chrome.runtime.onSuspend.addListener(() => {
     console.log('Extension suspended - all auto-click stopped');
 });
 
-// Handle tab updates (URL changes)
+// Handle tab updates (URL changes) - Enhanced with viewport monitoring
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     if (changeInfo.status === 'complete') {
         // Stop auto-click if tab navigated to system page
@@ -791,10 +871,13 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
                 console.log(`Could not get viewport info for tab ${tabId}:`, error.message);
             });
         }, 1000);
+
+        // Reset scroll state for new page
+        setTabScrollState(tabId, { x: 0, y: 0 });
     }
 });
 
-// Handle tab activation (switching between tabs)
+// Handle tab activation (switching between tabs) - Enhanced
 chrome.tabs.onActivated.addListener((activeInfo) => {
     const tabId = activeInfo.tabId;
     
@@ -806,7 +889,7 @@ chrome.tabs.onActivated.addListener((activeInfo) => {
     }, 500);
 });
 
-// Periodic cleanup of old data
+// Periodic cleanup of old data - Enhanced
 setInterval(() => {
     // Clean up viewport info for non-existent tabs
     chrome.tabs.query({}, (tabs) => {
@@ -815,10 +898,30 @@ setInterval(() => {
         for (const tabId of tabViewportInfo.keys()) {
             if (!existingTabIds.has(tabId)) {
                 tabViewportInfo.delete(tabId);
-                console.log(`Cleaned up viewport info for non-existent tab: ${tabId}`);
+                tabScrollState.delete(tabId);
+                console.log(`Cleaned up viewport/scroll info for non-existent tab: ${tabId}`);
             }
         }
     });
 }, 300000); // Every 5 minutes
 
-console.log('Enhanced Background script v4.1 loaded with tab independence, cookie management, and Playwright support');
+// Monitor viewport changes - New feature
+setInterval(() => {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs.length > 0) {
+            const tabId = tabs[0].id;
+            
+            // Check if auto-refresh is enabled
+            chrome.storage.local.get(['autoRefreshViewport'], (result) => {
+                if (result.autoRefreshViewport !== false) {
+                    getViewportInfoForTab(tabId).catch(error => {
+                        // Silently handle errors for viewport monitoring
+                        console.log(`Viewport monitoring failed for tab ${tabId}:`, error.message);
+                    });
+                }
+            });
+        }
+    });
+}, 10000); // Every 10 seconds for active tab
+
+console.log('Enhanced Background script v4.1 loaded with complete step support, enhanced scroll, and real-time viewport monitoring');

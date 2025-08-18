@@ -230,6 +230,43 @@
             </div>
 
             <div class="setting-group">
+                <h3>Cài đặt Scroll</h3>
+                <div class="setting-item">
+                    <div class="setting-label">Chế độ scroll mặc định</div>
+                    <div class="setting-control">
+                        <select id="defaultScrollMode">
+                            <option value="absolute">Tuyệt đối (absolute)</option>
+                            <option value="relative">Tương đối (relative)</option>
+                            <option value="percentage">Phần trăm (%)</option>
+                            <option value="delta">Delta (px)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="setting-item">
+                    <div class="setting-label">Smooth scroll</div>
+                    <div class="setting-control">
+                        <input type="checkbox" id="defaultSmoothScroll" checked>
+                    </div>
+                </div>
+            </div>
+
+            <div class="setting-group">
+                <h3>Cài đặt Viewport</h3>
+                <div class="setting-item">
+                    <div class="setting-label">Auto-refresh viewport info</div>
+                    <div class="setting-control">
+                        <input type="checkbox" id="autoRefreshViewport" checked>
+                    </div>
+                </div>
+                <div class="setting-item">
+                    <div class="setting-label">Refresh interval (giây)</div>
+                    <div class="setting-control">
+                        <input type="number" id="viewportRefreshInterval" value="5" min="1" max="30">
+                    </div>
+                </div>
+            </div>
+
+            <div class="setting-group">
                 <h3>Cài đặt Playwright Export</h3>
                 <div class="setting-item">
                     <div class="setting-label">Ngôn ngữ export</div>
@@ -251,6 +288,12 @@
                         </select>
                     </div>
                 </div>
+                <div class="setting-item">
+                    <div class="setting-label">Include viewport comments</div>
+                    <div class="setting-control">
+                        <input type="checkbox" id="includeViewportComments" checked>
+                    </div>
+                </div>
             </div>
 
             <div class="setting-group">
@@ -263,11 +306,12 @@
                     <div class="setting-label">Tính năng mới</div>
                     <div class="setting-control">
                         <div style="font-size: 10px; color: #666;">
-                            ✨ Playwright Export<br>
-                            📐 Viewport Info<br>
-                            🎯 Fixed Coordinate Picking<br>
+                            ✨ Enhanced Scroll (4 chế độ)<br>
+                            📐 Real-time Viewport Info<br>
+                            🎭 Complete Playwright Support<br>
                             🍪 Enhanced Cookie Management<br>
-                            📁 File Picker for Scripts
+                            📁 File Picker for Scripts<br>
+                            🔧 All Step Types Fixed
                         </div>
                     </div>
                 </div>
@@ -279,7 +323,7 @@
         </div>
     </div>
 
-    <!-- Add Step Modal - Enhanced -->
+    <!-- Add Step Modal - Enhanced with Scroll Options -->
     <div id="addStepModal" class="modal">
         <div class="modal-content" style="max-width: 600px;">
             <div class="modal-header">
@@ -295,7 +339,7 @@
                         <option value="type">Nhập text</option>
                         <option value="press">Nhấn phím</option>
                         <option value="wait">Chờ</option>
-                        <option value="scroll">Scroll</option>
+                        <option value="scroll">Scroll (Enhanced)</option>
                         <option value="hover">Hover</option>
                         <option value="goto">Đi tới URL</option>
                         <option value="reload">Reload trang</option>
@@ -354,27 +398,6 @@
         </div>
     </div>
 
-    <!-- File Picker Modal Template (will be created dynamically) -->
-    <div id="filePickerModalTemplate" style="display: none;">
-        <div class="modal-content" style="max-width: 500px;">
-            <div class="modal-header">
-                <h3>Chọn Files từ File Manager</h3>
-                <button class="close">&times;</button>
-            </div>
-            <div style="max-height: 300px; overflow-y: auto; border: 1px solid #ddd; margin: 10px 0;">
-                <div class="file-picker-list"></div>
-            </div>
-            <div style="margin: 10px 0; padding: 10px; background: #f9f9f9; border-radius: 4px;">
-                <strong>Đã chọn:</strong>
-                <div class="selected-files-list" style="margin-top: 5px; font-size: 11px; max-height: 60px; overflow-y: auto;"></div>
-            </div>
-            <div style="display: flex; gap: 10px; justify-content: flex-end;">
-                <button class="confirm-file-picker btn btn-primary">✅ Xác nhận</button>
-                <button class="cancel-file-picker btn btn-secondary">❌ Hủy</button>
-            </div>
-        </div>
-    </div>
-
     <!-- Scripts -->
     <script src="../js/indexeddb-helper.js"></script>
     <script src="../js/autoclicker.js"></script>
@@ -383,7 +406,7 @@
     <script src="../js/cookie-manager.js"></script>
     <script src="../js/slidebar.js"></script>
 
-    <!-- Additional CSS for new features -->
+    <!-- Additional CSS for enhanced features -->
     <style>
         /* Enhanced step parameters */
         .param-group {
@@ -414,6 +437,20 @@
             outline: none;
             border-color: #4f46e5;
             box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.1);
+        }
+
+        /* Enhanced scroll mode specific styling */
+        .param-group.scroll-mode-specific {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 4px;
+            padding: 8px;
+            margin: 8px 0;
+        }
+
+        .param-group.scroll-mode-specific label {
+            color: #4f46e5;
+            font-weight: 600;
         }
 
         /* File picker styles */
@@ -531,7 +568,7 @@
             background: #f8fafc;
         }
 
-        /* Viewport info styles */
+        /* Enhanced viewport info styles */
         .viewport-info {
             background: white;
             border: 1px solid #e2e8f0;
@@ -539,6 +576,12 @@
             padding: 12px;
             margin-bottom: 16px;
             font-size: 11px;
+            transition: all 0.2s ease;
+        }
+
+        .viewport-info:hover {
+            border-color: #4f46e5;
+            box-shadow: 0 2px 8px rgba(79, 70, 229, 0.1);
         }
 
         .viewport-info h4 {
@@ -546,6 +589,20 @@
             margin-bottom: 8px;
             color: #1e293b;
             font-size: 12px;
+        }
+
+        /* Settings page enhancements */
+        .setting-control input[type="checkbox"] {
+            width: auto;
+            margin: 0;
+        }
+
+        .setting-control select {
+            width: 120px;
+            padding: 4px 8px;
+            border: 1px solid #e2e8f0;
+            border-radius: 4px;
+            font-size: 11px;
         }
 
         /* Cookie file item styles */
@@ -564,6 +621,26 @@
         .cookie-file-item:hover {
             border-color: #4f46e5;
             box-shadow: 0 2px 8px rgba(79, 70, 229, 0.1);
+        }
+
+        /* Enhanced modal styling */
+        .modal {
+            backdrop-filter: blur(2px);
+        }
+
+        .modal-content {
+            animation: modalSlideIn 0.3s ease;
+        }
+
+        @keyframes modalSlideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
 
         /* Responsive adjustments */
@@ -588,6 +665,10 @@
             .action-card .desc {
                 font-size: 9px;
             }
+
+            .viewport-info {
+                font-size: 10px;
+            }
         }
 
         /* Animation for new elements */
@@ -603,6 +684,68 @@
             to {
                 opacity: 1;
                 transform: translateY(0);
+            }
+        }
+
+        /* Status indicators */
+        .status-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 6px;
+        }
+
+        .status-running {
+            background: #10b981;
+            animation: pulse 2s infinite;
+        }
+
+        .status-idle {
+            background: #64748b;
+        }
+
+        .status-error {
+            background: #ef4444;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.5;
+            }
+        }
+
+        /* Enhanced button states */
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn.loading {
+            position: relative;
+            color: transparent;
+        }
+
+        .btn.loading::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 12px;
+            height: 12px;
+            border: 2px solid currentColor;
+            border-radius: 50%;
+            border-top-color: transparent;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: translate(-50%, -50%) rotate(360deg);
             }
         }
     </style>
