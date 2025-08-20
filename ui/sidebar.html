@@ -10,7 +10,7 @@
     <!-- Header -->
     <div class="header">
         <h1>Automation Suite</h1>
-        <p>Tự động hóa web thông minh v4.1</p>
+        <p>Tự động hóa web thông minh v4.1 - FIXED</p>
     </div>
 
     <!-- Navigation -->
@@ -158,7 +158,7 @@
             <div class="file-upload-area">
                 <div class="upload-zone">
                     <div class="upload-icon">🤖</div>
-                    <div class="upload-text">AI Script Generator</div>
+                    <div class="upload-text">AI Script Generator - FIXED</div>
                     <div class="upload-subtext">Tạo script tự động từ mô tả ngôn ngữ tự nhiên</div>
                 </div>
             </div>
@@ -184,7 +184,7 @@
                 </div>
                 <div class="form-group">
                     <label class="form-label">Mô tả hành động bằng tiếng Việt</label>
-                    <textarea id="aiDescription" class="form-control" rows="4" placeholder="Ví dụ: Đăng nhập với email admin@example.com và mật khẩu 123456, sau đó click vào nút Dashboard"></textarea>
+                    <textarea id="aiDescription" class="form-control" rows="4" placeholder="Ví dụ: Click vào nút comment trên Facebook, sau đó nhập 'Bài viết hay quá!' và bấm Enter"></textarea>
                 </div>
                 <div class="task-controls">
                     <button class="btn btn-primary" id="generateAIScriptBtn">🤖 Tạo Script</button>
@@ -210,7 +210,7 @@
                 </div>
             </div>
 
-            <!-- DOM DEBUG SECTION -->
+            <!-- 🔥 ENHANCED DOM DEBUG SECTION -->
             <div class="file-list">
                 <div class="task-header">
                     <div class="task-title">🌐 DOM Sent to AI (Debug)</div>
@@ -223,17 +223,23 @@
                 <div id="aiDOMResponse" style="display: none;">
                     <div style="background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 6px; padding: 12px; margin-bottom: 8px;">
                         <div style="font-size: 11px; color: #666; margin-bottom: 8px;">
-                            <strong>🌐 DOM được gửi cho AI:</strong> Length: <span id="domLength">0</span> chars | 
-                            Truncated: <span id="domTruncated">No</span>
+                            <strong>🌐 DOM Stats:</strong> 
+                            Length: <span id="domLength">0</span> chars | 
+                            Truncated: <span id="domTruncated">Disabled</span> |
+                            Status: <span id="domStatus" style="font-weight: bold; padding: 2px 6px; border-radius: 3px; font-size: 9px;">✅ Full DOM</span>
                         </div>
                         <textarea id="aiDOMText" style="width: 100%; height: 300px; font-family: 'Courier New', monospace; font-size: 9px; background: #fff; border: 1px solid #ddd; padding: 8px; border-radius: 4px; resize: vertical;" readonly placeholder="DOM content sẽ hiển thị ở đây..."></textarea>
                     </div>
-                    <div style="background: #e7f3ff; border: 1px solid #b3d7ff; border-radius: 4px; padding: 8px; font-size: 10px; color: #0066cc;">
-                        <strong>💡 DOM Info:</strong><br>
-                        • DOM này được serialize từ trang web hiện tại<br>
-                        • Elements được đánh dấu __stagehand_id để AI dễ chọn<br>
-                        • Content có thể bị truncate để fit AI context limit<br>
-                        • Kiểm tra element bạn cần có trong DOM này không
+                    
+                    <!-- 🔥 ENHANCED: Dynamic info box -->
+                    <div id="domInfoBox" class="truncation-disabled" style="border-radius: 4px; padding: 8px; font-size: 10px; margin-bottom: 8px; background: #e7f3ff; border: 1px solid #b3d7ff; color: #0066cc;">
+                        <strong id="domInfoTitle">💡 DOM Info - FIXED:</strong><br>
+                        <span id="domInfoContent">
+                            • DOM được gửi đầy đủ cho AI (KHUYẾN NGHỊ)<br>
+                            • Tất cả elements được bảo toàn<br>
+                            • Comment/Like/Share buttons luôn có trong DOM<br>
+                            • AI sẽ thấy toàn bộ structure của trang
+                        </span>
                     </div>
                 </div>
             </div>
@@ -311,7 +317,7 @@
             <input type="file" id="cookieFileInput" style="display: none;" accept=".json">
         </div>
 
-        <!-- Settings Page -->
+        <!-- 🔥 ENHANCED Settings Page với DOM Truncation Controls -->
         <div class="page" id="settings">
             <div class="setting-group">
                 <h3>Cài đặt Auto Click</h3>
@@ -382,8 +388,9 @@
                 </div>
             </div>
 
+            <!-- 🔥 ENHANCED AI Settings với DOM Truncation Controls -->
             <div class="setting-group">
-                <h3>Cài đặt AI</h3>
+                <h3>🔥 Cài đặt AI - FIXED</h3>
                 <div class="setting-item">
                     <div class="setting-label">Model AI</div>
                     <div class="setting-control">
@@ -399,10 +406,28 @@
                         <input type="number" id="aiTemperature" value="0.1" min="0" max="1" step="0.1">
                     </div>
                 </div>
+                
+                <!-- 🔥 NEW: DOM Truncation Controls -->
                 <div class="setting-item">
-                    <div class="setting-label">Max DOM size (chars)</div>
+                    <div class="setting-label">
+                        🔧 Enable DOM Truncation
+                        <small style="display: block; color: #666; font-weight: normal; margin-top: 2px; font-size: 9px; line-height: 1.3;">
+                            <strong style="color: #dc2626;">KHUYẾN NGHỊ: TẮT</strong> để AI thấy full DOM và tìm được comment button
+                        </small>
+                    </div>
                     <div class="setting-control">
-                        <input type="number" id="maxDomSize" value="8000" min="4000" max="20000">
+                        <input type="checkbox" id="enableTruncation">
+                    </div>
+                </div>
+                <div class="setting-item">
+                    <div class="setting-label">
+                        Max DOM Size (chars)
+                        <small style="display: block; color: #666; font-weight: normal; margin-top: 2px; font-size: 9px; line-height: 1.3;">
+                            Chỉ áp dụng khi enable truncation. Facebook DOM thường ~200k chars
+                        </small>
+                    </div>
+                    <div class="setting-control">
+                        <input type="number" id="maxDomSize" value="100000" min="10000" max="500000" step="10000" style="width: 100px;">
                     </div>
                 </div>
             </div>
@@ -443,32 +468,43 @@
                 </div>
             </div>
 
+            <!-- 🔥 ENHANCED About Section -->
             <div class="setting-group">
                 <h3>Về extension</h3>
                 <div class="setting-item">
                     <div class="setting-label">Phiên bản</div>
-                    <div class="setting-control">4.1</div>
+                    <div class="setting-control">4.1 - FIXED</div>
                 </div>
                 <div class="setting-item">
-                    <div class="setting-label">Tính năng mới</div>
+                    <div class="setting-label">🔥 DOM Truncation FIX</div>
                     <div class="setting-control">
-                        <div style="font-size: 10px; color: #666;">
-                            ✨ Enhanced Scroll (4 chế độ)<br>
-                            📐 Real-time Viewport Info<br>
-                            🎭 Complete Playwright Support<br>
-                            🍪 Enhanced Cookie Management<br>
-                            📁 File Picker for Scripts<br>
-                            🤖 AI Script Generation<br>
-                            🔄 For/While Loops<br>
-                            🔧 All Step Types Fixed<br>
-                            🌐 DOM Debug Display<br>
-                            🐛 AI Debug Display
+                        <div style="font-size: 10px; color: #666; line-height: 1.4;">
+                            <strong style="color: #10b981;">✅ FIXED: DOM Truncation Issue</strong><br>
+                            🔧 Disabled truncation by default<br>
+                            📏 Send full DOM to AI (no more missing elements)<br>
+                            🛡️ Enhanced protection for social media buttons<br>
+                            🎯 Better comment/like/share detection<br>
+                            📈 Increased default limit: 12k → 100k chars<br>
+                            ⚙️ User-controllable truncation settings<br>
+                            🌐 Real-time DOM debug display<br>
+                            🔍 Facebook comment button detection WORKS!
+                        </div>
+                    </div>
+                </div>
+                <div class="setting-item">
+                    <div class="setting-label">DOM Debug Info</div>
+                    <div class="setting-control">
+                        <div style="font-size: 10px; color: #666; line-height: 1.4;">
+                            🌐 Check "DOM Sent to AI" section in AI tab<br>
+                            📊 Monitor DOM size and truncation status<br>
+                            🔍 Copy full DOM to debug missing elements<br>
+                            📱 Test với "click vào nút comment" sẽ work!
                         </div>
                     </div>
                 </div>
                 <div class="setting-item">
                     <div class="setting-label">Cập nhật cuối</div>
-                    <div class="setting-control">2024</div>
+                    <div class="setting-control">2024 - DOM Truncation Fixed</div>
                 </div>
             </div>
         </div>
@@ -562,7 +598,7 @@
     <script src="../js/slidebar.js"></script>
     <script src="../js/ai-helper.js"></script>
 
-    <!-- Additional CSS for enhanced features -->
+    <!-- 🔥 ENHANCED CSS for DOM Truncation Controls -->
     <style>
         /* Enhanced step parameters */
         .param-group {
@@ -747,7 +783,16 @@
             font-size: 12px;
         }
 
-        /* Settings page enhancements */
+        /* 🔥 ENHANCED: Settings page controls */
+        .setting-item small {
+            display: block;
+            font-size: 9px;
+            color: #666;
+            font-weight: normal;
+            margin-top: 2px;
+            line-height: 1.3;
+        }
+
         .setting-control input[type="checkbox"] {
             width: auto;
             margin: 0;
@@ -759,6 +804,49 @@
             border: 1px solid #e2e8f0;
             border-radius: 4px;
             font-size: 11px;
+        }
+
+        .setting-control input[type="number"] {
+            width: 100px;
+        }
+
+        /* 🔥 DOM Status indicators */
+        #domStatus {
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 9px;
+        }
+
+        .status-full-dom {
+            background: #10b981;
+            color: white;
+        }
+
+        .status-truncated {
+            background: #f59e0b;
+            color: white;
+        }
+
+        .status-disabled {
+            background: #6b7280;
+            color: white;
+        }
+
+        /* 🔥 DOM Info Box styling */
+        #domInfoBox {
+            transition: all 0.3s ease;
+        }
+
+        #domInfoBox.truncation-enabled {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+        }
+
+        #domInfoBox.truncation-disabled {
+            background: #e7f3ff;
+            border: 1px solid #b3d7ff;
+            color: #0066cc;
         }
 
         /* Cookie file item styles */
@@ -812,6 +900,36 @@
                 opacity: 1;
                 transform: translateY(0);
             }
+        }
+
+        /* Enhanced DOM debug styling */
+        #aiDOMResponse, #aiRawResponse {
+            animation: slideDown 0.3s ease-out;
+        }
+
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                max-height: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                max-height: 400px;
+                transform: translateY(0);
+            }
+        }
+
+        #aiDOMText, #aiResponseText {
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Courier New', monospace !important;
+            line-height: 1.4;
+            tab-size: 2;
+        }
+
+        #aiDOMText:focus, #aiResponseText:focus {
+            outline: none;
+            border-color: #4f46e5;
+            box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.1);
         }
 
         /* Responsive adjustments */
@@ -959,36 +1077,53 @@
         .nested-step:last-child {
             margin-bottom: 0;
         }
-
-        /* AI Debug Section Styles */
-        #aiDOMResponse, #aiRawResponse {
-            animation: slideDown 0.3s ease-out;
-        }
-
-        @keyframes slideDown {
-            from {
-                opacity: 0;
-                max-height: 0;
-                transform: translateY(-10px);
-            }
-            to {
-                opacity: 1;
-                max-height: 400px;
-                transform: translateY(0);
-            }
-        }
-
-        #aiDOMText, #aiResponseText {
-            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Courier New', monospace !important;
-            line-height: 1.4;
-            tab-size: 2;
-        }
-
-        #aiDOMText:focus, #aiResponseText:focus {
-            outline: none;
-            border-color: #4f46e5;
-            box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.1);
-        }
     </style>
+
+    <!-- 🔥 ENHANCED JavaScript for DOM Truncation Controls -->
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        // Enhanced DOM info updates
+        function updateDOMInfoDisplay() {
+            const enableTruncation = document.getElementById('enableTruncation')?.checked;
+            const maxDomSize = document.getElementById('maxDomSize')?.value;
+            const domInfoBox = document.getElementById('domInfoBox');
+            const domInfoContent = document.getElementById('domInfoContent');
+            const domStatus = document.getElementById('domStatus');
+            
+            if (domInfoBox && domInfoContent && domStatus) {
+                if (enableTruncation) {
+                    domInfoBox.className = 'truncation-enabled';
+                    domStatus.textContent = '⚠️ Truncation ON';
+                    domStatus.className = 'status-truncated';
+                    domInfoContent.innerHTML = `
+                        • DOM sẽ bị cắt nếu vượt quá ${maxDomSize} chars<br>
+                        • Important elements được bảo vệ<br>
+                        • Có thể mất một số interactive elements<br>
+                        • Khuyến nghị: TẮT truncation để AI hoạt động tốt hơn
+                    `;
+                } else {
+                    domInfoBox.className = 'truncation-disabled';
+                    domStatus.textContent = '✅ Full DOM';
+                    domStatus.className = 'status-full-dom';
+                    domInfoContent.innerHTML = `
+                        • DOM được gửi đầy đủ cho AI (KHUYẾN NGHỊ)<br>
+                        • Tất cả elements được bảo toàn<br>
+                        • Comment/Like/Share buttons luôn có trong DOM<br>
+                        • AI sẽ thấy toàn bộ structure của trang
+                    `;
+                }
+            }
+        }
+        
+        // Event listeners for truncation controls
+        document.getElementById('enableTruncation')?.addEventListener('change', updateDOMInfoDisplay);
+        document.getElementById('maxDomSize')?.addEventListener('input', updateDOMInfoDisplay);
+        
+        // Initial update
+        updateDOMInfoDisplay();
+        
+        console.log('🔥 SIDEBAR LOADED: DOM Truncation Controls Ready!');
+    });
+    </script>
 </body>
 </html>

@@ -7,6 +7,9 @@ class AIHelper {
         this.lastDOMContent = '';
         this.originalDOMLength = 0;
         this.truncatedDOMLength = 0;
+        // 🔥 NEW: Allow disabling truncation
+        this.enableTruncation = false; // ✅ Set to false to disable truncation
+        this.maxDomSize = 100000; // ✅ Increased from 12k to 100k
     }
 
     initializeEventListeners() {
@@ -60,6 +63,15 @@ class AIHelper {
         document.getElementById('clearAIResponse')?.addEventListener('click', () => {
             this.clearAIResponseDisplay();
         });
+
+        // 🔥 NEW: Truncation controls
+        document.getElementById('enableTruncation')?.addEventListener('change', (e) => {
+            this.enableDOMTruncation(e.target.checked);
+        });
+
+        document.getElementById('maxDomSize')?.addEventListener('change', (e) => {
+            this.setMaxDOMSize(parseInt(e.target.value) || 100000);
+        });
     }
 
     async loadApiKey() {
@@ -106,28 +118,50 @@ class AIHelper {
         }
     }
 
-    // 🔥 IMPROVED: Smart HTML truncation - NO stagehand_id mentions!
-    smartTruncateHTML(html, maxLength = 10000) {
+    // 🔥 ENHANCED: Much better truncation with social media support
+    smartTruncateHTML(html, maxLength = 100000) {
         if (html.length <= maxLength) return html;
         
-        // Tìm và bảo vệ các element quan trọng trước khi truncate
+        console.warn(`🔧 DOM truncation: ${html.length} → ${maxLength} chars`);
+        
+        // 🔥 ENHANCED: Much better protection patterns for Facebook/social media
         const importantPatterns = [
+            // Form inputs
             /<input[^>]*(?:search|tìm|kiếm|query|q|email|password|username)[^>]*>/gi,
             /<button[^>]*(?:search|tìm|submit|gửi|login|đăng|register)[^>]*>.*?<\/button>/gi,
             /<form[^>]*>.*?<\/form>/gi,
+            
+            // Navigation and structure
             /<nav[^>]*>.*?<\/nav>/gi,
             /<header[^>]*>.*?<\/header>/gi,
             /<a[^>]*href[^>]*>.*?<\/a>/gi,
-            // ENHANCED: Add more semantic patterns
+            
+            // 🔥 NEW: Social media interaction buttons - COMPREHENSIVE
+            /<[^>]*aria-label[^>]*(?:comment|like|share|react|follow|message)[^>]*>.*?<\/[^>]*>/gi,
+            /<[^>]*aria-label[^>]*(?:bình luận|thích|chia sẻ|phản ứng|theo dõi|nhắn tin)[^>]*>.*?<\/[^>]*>/gi,
+            /<[^>]*role="button"[^>]*>.*?(?:comment|like|share|react|post|send|follow)[^>]*<\/[^>]*>/gi,
+            /<[^>]*role="button"[^>]*>.*?(?:bình luận|thích|chia sẻ|phản ứng|đăng|gửi|theo dõi)[^>]*<\/[^>]*>/gi,
+            /<div[^>]*role="button"[^>]*>.*?<\/div>/gi,
+            /<button[^>]*>.*?(?:comment|like|share|post|send|follow|message)[^>]*<\/button>/gi,
+            /<button[^>]*>.*?(?:bình luận|thích|chia sẻ|đăng|gửi|theo dõi|nhắn tin)[^>]*<\/button>/gi,
+            
+            // Data attributes and test elements
             /<\w+[^>]*(?:data-testid|data-cy|data-test|aria-label|role)[^>]*>.*?<\/\w+>/gi,
             /<select[^>]*>.*?<\/select>/gi,
-            /<textarea[^>]*>.*?<\/textarea>/gi
+            /<textarea[^>]*>.*?<\/textarea>/gi,
+            
+            // 🔥 NEW: Interactive elements by text content - BROADER
+            /<[^>]*>.*?(?:comment|bình luận|like|thích|share|chia sẻ|post|đăng|send|gửi|follow|theo dõi|message|nhắn tin|react|phản ứng).*?<\/[^>]*>/gi,
+            
+            // 🔥 NEW: Facebook-specific patterns
+            /<div[^>]*data-[^>]*>.*?(?:comment|like|share).*?<\/div>/gi,
+            /<span[^>]*>.*?(?:Comment|Like|Share|Bình luận|Thích|Chia sẻ).*?<\/span>/gi
         ];
         
         let protectedElements = [];
         let protectedHtml = html;
         
-        // Trích xuất các element quan trọng
+        // Extract and protect important elements
         importantPatterns.forEach((pattern, index) => {
             const matches = html.match(pattern);
             if (matches) {
@@ -139,24 +173,33 @@ class AIHelper {
             }
         });
         
-        // Truncate phần còn lại
+        console.log(`🛡️ Protected ${protectedElements.length} important elements`);
+        
+        // 🔥 IMPROVED: Better cutting strategy
         let cutPos = maxLength;
-        while (cutPos > 0 && protectedHtml[cutPos] !== '>') {
+        
+        // Try to cut at tag boundaries
+        while (cutPos > maxLength * 0.7 && protectedHtml[cutPos] !== '>') {
             cutPos--;
         }
         
-        if (cutPos < maxLength * 0.8) {
+        // If still not found, cut at word boundaries
+        if (cutPos <= maxLength * 0.7) {
             cutPos = protectedHtml.lastIndexOf(' ', maxLength);
+            if (cutPos < maxLength * 0.5) {
+                cutPos = maxLength; // Force cut if necessary
+            }
         }
         
         let truncatedHtml = protectedHtml.substring(0, cutPos + 1);
         
-        // Khôi phục các element quan trọng
+        // Restore protected elements
         protectedElements.forEach(({ placeholder, content }) => {
             truncatedHtml = truncatedHtml.replace(placeholder, content);
         });
         
-        return truncatedHtml + '\n<!-- [HTML được tối ưu cho AI, chỉ giữ element quan trọng] -->';
+        console.log(`✂️ Truncation complete: ${html.length} → ${truncatedHtml.length} chars`);
+        return truncatedHtml + '\n<!-- [Truncated for AI context] -->';
     }
 
     async generateScriptFromDescription() {
@@ -191,13 +234,22 @@ class AIHelper {
                 generateBtn.textContent = 'Đang tạo script...';
             }
             
-            // Use smart truncation and store truncated length
-            const truncatedDOM = this.smartTruncateHTML(dom, 12000);
-            this.truncatedDOMLength = truncatedDOM.length;
+            // 🔥 FIXED: No more aggressive truncation!
+            let processedDOM = dom;
+            
+            if (this.enableTruncation && dom.length > this.maxDomSize) {
+                console.warn(`⚠️ DOM size ${dom.length} exceeds limit ${this.maxDomSize}, truncating...`);
+                processedDOM = this.smartTruncateHTML(dom, this.maxDomSize);
+                this.truncatedDOMLength = processedDOM.length;
+            } else {
+                console.log(`✅ Sending full DOM (${dom.length} chars) to AI - No truncation!`);
+                this.truncatedDOMLength = dom.length; // Same as original
+            }
+            
             this.updateDOMTruncationInfo();
             
-            // Generate script using AI with REAL selector strategy
-            const aiResponse = await this.callGoogleAI(description, truncatedDOM, currentUrl);
+            // Generate script using AI with FULL DOM or controlled truncation
+            const aiResponse = await this.callGoogleAI(description, processedDOM, currentUrl);
             
             // Display raw AI response immediately
             this.displayRawAIResponse(aiResponse);
@@ -259,7 +311,7 @@ class AIHelper {
     async callGoogleAI(description, dom, currentUrl) {
         const availableActions = this.getAvailableActions();
         
-        // 🔥 COMPLETELY NEW PROMPT - REAL SELECTORS ONLY!
+        // 🔥 ENHANCED: Much better prompt for social media
         const prompt = `Bạn là chuyên gia tự động hóa web. Dựa trên mô tả của người dùng và DOM HTML thực tế, hãy tạo một mảng JSON các bước tự động hóa với CSS selectors THẬT.
 
 MÔ TẢ NGƯỜI DÙNG: "${description}"
@@ -268,64 +320,63 @@ URL TRANG HIỆN TẠI: ${currentUrl}
 CÁC HÀNH ĐỘNG CÓ SẴN:
 ${availableActions}
 
-DOM HTML THỰC TẾ (đã được làm sạch):
+DOM HTML THỰC TẾ (${this.enableTruncation ? 'có thể bị truncate' : 'FULL DOM'}):
 ${dom}
 
 🔥 QUY TẮC QUAN TRỌNG VỀ CSS SELECTORS:
 1. CHỈ sử dụng CSS selectors CÓ THẬT trong DOM HTML ở trên
 2. TUYỆT ĐỐI KHÔNG tự bịa hay đoán selector
-3. KHÔNG bao giờ sử dụng __stagehand_id (nó không có thật!)
+3. KHÔNG bao giờ sử dụng __stagehand_id hoặc fake IDs
 4. Ưu tiên sử dụng theo thứ tự:
-   - ID thật: #loginButton, #email-input  
-   - Name attribute: input[name="username"]
-   - Data attributes: [data-testid="submit"], [data-cy="login"]
-   - Type + context: form input[type="email"]
-   - ARIA labels: [aria-label="Search"]
-   - Classes ổn định: .btn-primary (KHÔNG dùng .css-xyz123)
-   - Placeholder: input[placeholder="Enter email"]
-   - Tag + parent: form .submit-button
-   - Structure: nav > ul > li:first-child
-   - nth-child CHỈ khi không còn cách nào khác
+   - ARIA labels: [aria-label*="comment"], [aria-label*="like"], [aria-label*="share"]
+   - Role + text: [role="button"]:contains("Comment"), [role="button"]:contains("Like")
+   - ID thật: #loginButton, #commentButton
+   - Name attribute: input[name="username"], button[name="submit"]
+   - Data attributes: [data-testid="comment"], [data-cy="like-button"]
+   - Type + context: input[type="email"], button[type="submit"]
+   - Classes ổn định: .comment-button, .like-btn (KHÔNG dùng .css-xyz123)
+   - Text content: button:contains("Comment"), span:contains("Like")
+   - Structure: .post-actions button:first-child
+
+🌟 ĐẶC BIỆT CHO FACEBOOK/SOCIAL MEDIA:
+- Comment button: [aria-label*="comment"], [role="button"]:contains("Comment"), div[role="button"] span:contains("Comment")
+- Like button: [aria-label*="like"], [role="button"]:contains("Like"), div[role="button"] span:contains("Thích")
+- Share button: [aria-label*="share"], [role="button"]:contains("Share"), div[role="button"] span:contains("Chia sẻ")
+- Vietnamese text: "Bình luận", "Thích", "Chia sẻ"
 
 CHIẾN LƯỢC CHỌN SELECTOR:
 - PHÂN TÍCH KỸ DOM trước khi tạo selector
-- Tìm attributes CÓ THẬT: id, name, class, data-*, aria-*, type, placeholder
+- Tìm attributes CÓ THẬT: aria-label, role, data-*, id, name, class
+- Với social media buttons: ưu tiên aria-label và role="button"
 - Với form inputs: dùng name hoặc type attribute  
-- Với buttons: dùng text content, type, hoặc role
-- Với links: dùng href pattern hoặc text content
 - CHỈ dùng tọa độ (click) khi THẬT SỰ không có selector nào
 
 VÍ DỤ PHÂN TÍCH ĐÚNG:
-- Nếu DOM có: <input type="email" name="user_email" placeholder="Your email">
-- Dùng: input[name="user_email"] HOẶC input[type="email"] 
-- KHÔNG tự bịa: input[name="email"] (nếu không có)
-
-- Nếu DOM có: <button class="btn submit-btn" type="submit">Đăng nhập</button>
-- Dùng: button[type="submit"] HOẶC .submit-btn
-- KHÔNG dùng: button.btn-primary (nếu class không có)
+- Nếu DOM có: <div aria-label="Leave a comment" role="button"><span>Comment</span></div>
+- Dùng: [aria-label*="comment" i] HOẶC [role="button"]:contains("Comment")
+- KHÔNG tự bịa: #comment-btn (nếu không có ID này)
 
 VÍ DỤ OUTPUT MONG MUỐN:
 [
-  {"action": "fill", "selector": "input[name=\"username\"]", "text": "admin@example.com"},
-  {"action": "fill", "selector": "input[type=\"password\"]", "text": "password123"},
-  {"action": "clickElement", "selector": "button[type=\"submit\"]"},
-  {"action": "waitForElement", "selector": ".success-message", "timeout": 5000}
+  {"action": "clickElement", "selector": "[aria-label*='comment' i]"},
+  {"action": "fill", "selector": "textarea[aria-label*='comment']", "text": "Bình luận của tôi"},
+  {"action": "clickElement", "selector": "[aria-label*='submit' i][role='button']"}
 ]
 
 QUY TẮC CUỐI CÙNG:
 - BẮT BUỘC selector phải TỒN TẠI trong DOM ở trên
 - KIỂM TRA từng selector với DOM trước khi đưa vào JSON
-- Nếu không chắc chắn, dùng cách tổng quát hơn
+- Nếu không chắc chắn, dùng cách tổng quát hơn: [role="button"]:contains("text")
 - TUYỆT ĐỐI KHÔNG đoán mò selector
 - CHỈ dùng những gì BẠN THẤY trong DOM HTML
 
-Hãy tạo script automation với selectors THẬT:`;
+Hãy tạo script automation với selectors THẬT dựa trên DOM được cung cấp:`;
 
         try {
             // Get selected model from settings
             const selectedModel = document.getElementById('aiModel')?.value || 'gemini-2.5-flash';
 
-            console.log('🔥 Sending REAL selector prompt to AI:', prompt.substring(0, 500) + '...');
+            console.log('🔥 Sending ENHANCED social media prompt to AI...');
 
             const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${this.apiKey}`, {
                 method: 'POST',
@@ -351,10 +402,9 @@ Hãy tạo script automation với selectors THẬT:`;
                 const errorText = await response.text();
                 throw new Error(`API Error: ${response.status} ${response.statusText} - ${errorText}`);
             }
-
             
             const data = await response.json();
-            console.log('Raw API Response from Google:', JSON.stringify(data, null, 2)); // Dòng này giúp debug
+            console.log('Raw API Response from Google:', JSON.stringify(data, null, 2));
 
             // KIỂM TRA LỖI TRỰC TIẾP TỪ API
             if (data.error) {
@@ -424,21 +474,18 @@ LẤY DỮ LIỆU:
 - textContent: Lấy text content {"action": "textContent", "selector": "CSS_SELECTOR_THẬT"}
 - inputValue: Lấy input value {"action": "inputValue", "selector": "input[name='username']"}
 
-🔥 VÍ DỤ CSS SELECTORS THẬT (chỉ dùng nếu có trong DOM):
-- By ID: #login-button, #email-field, #main-nav
-- By Name: input[name="username"], select[name="country"]  
-- By Type: input[type="email"], button[type="submit"]
-- By Class: .btn-primary, .form-control, .nav-link
-- By Data attrs: [data-testid="submit"], [data-cy="login-btn"]
-- By ARIA: [aria-label="Search"], [role="button"]
-- By Placeholder: input[placeholder="Enter email"]
-- Combined: form input[type="password"], .header .login-btn
-- Structure: nav > ul > li:first-child, form .btn:last-child
+🔥 VÍ DỤ CSS SELECTORS THẬT CHO SOCIAL MEDIA:
+- Comment button: [aria-label*="comment" i], [role="button"]:contains("Comment"), div[role="button"] span:contains("Bình luận")
+- Like button: [aria-label*="like" i], [role="button"]:contains("Like"), div[role="button"] span:contains("Thích")  
+- Share button: [aria-label*="share" i], [role="button"]:contains("Share"), div[role="button"] span:contains("Chia sẻ")
+- Form inputs: input[name="email"], textarea[aria-label*="comment"], input[type="password"]
+- Submit buttons: button[type="submit"], [role="button"][aria-label*="submit"]
 
 🚫 TUYỆT ĐỐI KHÔNG SỬ DỤNG:
 - __stagehand_id (không có thật!)
 - Selectors không có trong DOM
 - Generated classes như .css-xyz123, .makeStyles-root
+- Fake IDs không tồn tại
 `;
     }
 
@@ -614,7 +661,7 @@ LẤY DỮ LIỆU:
                     validationIcon.textContent = '🚫';
                     validationIcon.title = 'FAKE ID - Selector không tồn tại!';
                     validationIcon.style.color = '#ef4444';
-                } else if (step.selector.includes('#') || step.selector.includes('[name=') || step.selector.includes('[data-')) {
+                } else if (step.selector.includes('#') || step.selector.includes('[name=') || step.selector.includes('[data-') || step.selector.includes('[aria-label')) {
                     validationIcon.textContent = '✅';
                     validationIcon.title = 'Selector semantic tốt';
                     validationIcon.style.color = '#10b981';
@@ -693,6 +740,8 @@ LẤY DỮ LIỆU:
             lengthSpan.textContent = domContent.length.toLocaleString();
         }
 
+        this.updateDOMTruncationInfo();
+
         // Auto show DOM container
         const container = document.getElementById('aiDOMResponse');
         const button = document.getElementById('toggleDOMResponse');
@@ -704,10 +753,58 @@ LẤY DỮ LIỆU:
 
     updateDOMTruncationInfo() {
         const truncatedSpan = document.getElementById('domTruncated');
+        const domStatus = document.getElementById('domStatus');
+        const domInfoBox = document.getElementById('domInfoBox');
+        const domInfoContent = document.getElementById('domInfoContent');
+        
         if (truncatedSpan) {
-            const wasTruncated = this.truncatedDOMLength < this.originalDOMLength;
-            truncatedSpan.textContent = wasTruncated ? 'Yes' : 'No';
-            truncatedSpan.style.color = wasTruncated ? '#dc2626' : '#16a34a';
+            if (!this.enableTruncation) {
+                truncatedSpan.textContent = 'Disabled';
+                truncatedSpan.style.color = '#10b981';
+                truncatedSpan.title = 'Truncation is disabled - full DOM sent to AI';
+            } else {
+                const wasTruncated = this.truncatedDOMLength < this.originalDOMLength;
+                truncatedSpan.textContent = wasTruncated ? 'Yes' : 'No';
+                truncatedSpan.style.color = wasTruncated ? '#dc2626' : '#16a34a';
+                truncatedSpan.title = wasTruncated ? 
+                    `DOM was truncated from ${this.originalDOMLength} to ${this.truncatedDOMLength} chars` :
+                    'Full DOM sent to AI without truncation';
+            }
+        }
+
+        // Update status indicator
+        if (domStatus) {
+            if (!this.enableTruncation) {
+                domStatus.textContent = '✅ Full DOM';
+                domStatus.className = 'status-full-dom';
+            } else if (this.truncatedDOMLength < this.originalDOMLength) {
+                domStatus.textContent = '⚠️ Truncated';
+                domStatus.className = 'status-truncated';
+            } else {
+                domStatus.textContent = '✅ Not Truncated';
+                domStatus.className = 'status-full-dom';
+            }
+        }
+
+        // Update info box
+        if (domInfoBox && domInfoContent) {
+            if (!this.enableTruncation) {
+                domInfoBox.className = 'truncation-disabled';
+                domInfoContent.innerHTML = `
+                    • DOM được gửi đầy đủ cho AI (KHUYẾN NGHỊ)<br>
+                    • Tất cả elements được bảo toàn<br>
+                    • Comment/Like/Share buttons luôn có trong DOM<br>
+                    • AI sẽ thấy toàn bộ structure của trang
+                `;
+            } else {
+                domInfoBox.className = 'truncation-enabled';
+                domInfoContent.innerHTML = `
+                    • DOM sẽ bị cắt nếu vượt quá ${this.maxDomSize} chars<br>
+                    • Important elements được bảo vệ<br>
+                    • Có thể mất một số interactive elements<br>
+                    • Khuyến nghị: TẮT truncation để AI hoạt động tốt hơn
+                `;
+            }
         }
     }
 
@@ -935,6 +1032,54 @@ LẤY DỮ LIỆU:
         }
     }
 
+    // 🔥 NEW: Methods to control truncation from UI
+    enableDOMTruncation(enable = true) {
+        this.enableTruncation = enable;
+        console.log(`🔧 DOM Truncation: ${enable ? 'ENABLED' : 'DISABLED'}`);
+        this.updateDOMTruncationInfo();
+        
+        // Save setting
+        chrome.storage.local.set({ enableTruncation: enable });
+    }
+
+    setMaxDOMSize(size) {
+        this.maxDomSize = size;
+        console.log(`🔧 Max DOM Size set to: ${size} chars`);
+        
+        // Save setting
+        chrome.storage.local.set({ maxDomSize: size });
+    }
+
+    // Load settings from storage
+    async loadSettings() {
+        try {
+            const result = await chrome.storage.local.get([
+                'enableTruncation', 
+                'maxDomSize'
+            ]);
+            
+            if (result.enableTruncation !== undefined) {
+                this.enableTruncation = result.enableTruncation;
+            }
+            
+            if (result.maxDomSize) {
+                this.maxDomSize = result.maxDomSize;
+            }
+            
+            // Update UI controls
+            const enableTruncationInput = document.getElementById('enableTruncation');
+            const maxDomSizeInput = document.getElementById('maxDomSize');
+            
+            if (enableTruncationInput) enableTruncationInput.checked = this.enableTruncation;
+            if (maxDomSizeInput) maxDomSizeInput.value = this.maxDomSize;
+            
+            console.log(`🔧 Settings loaded: Truncation=${this.enableTruncation}, MaxSize=${this.maxDomSize}`);
+            
+        } catch (error) {
+            console.error('Failed to load settings:', error);
+        }
+    }
+
     showAlert(message, type = 'info') {
         if (window.SidebarUtils && window.SidebarUtils.showNotification) {
             window.SidebarUtils.showNotification(message, type);
@@ -949,6 +1094,11 @@ let aiHelper;
 document.addEventListener('DOMContentLoaded', () => {
     aiHelper = new AIHelper();
     
+    // Load settings after initialization
+    aiHelper.loadSettings();
+    
     // Make AI helper globally available
     window.AIHelper = aiHelper;
+    
+    console.log('🔥 FIXED: AI Helper loaded with CONFIGURABLE DOM TRUNCATION!');
 });
