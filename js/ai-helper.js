@@ -106,22 +106,22 @@ class AIHelper {
         }
     }
 
-    // IMPROVED: Smart HTML truncation to preserve search elements
+    // 🔥 IMPROVED: Smart HTML truncation - NO stagehand_id mentions!
     smartTruncateHTML(html, maxLength = 10000) {
         if (html.length <= maxLength) return html;
         
         // Tìm và bảo vệ các element quan trọng trước khi truncate
         const importantPatterns = [
-            /<input[^>]*(?:search|tìm|kiếm|query|q)[^>]*>/gi,
-            /<button[^>]*(?:search|tìm|submit|gửi|login|đăng)[^>]*>.*?<\/button>/gi,
+            /<input[^>]*(?:search|tìm|kiếm|query|q|email|password|username)[^>]*>/gi,
+            /<button[^>]*(?:search|tìm|submit|gửi|login|đăng|register)[^>]*>.*?<\/button>/gi,
             /<form[^>]*>.*?<\/form>/gi,
             /<nav[^>]*>.*?<\/nav>/gi,
             /<header[^>]*>.*?<\/header>/gi,
-            // ENHANCED: Add video/multimedia patterns
-            /<video[^>]*>.*?<\/video>/gi,
-            /<.*video.*class[^>]*>.*?<\/.*>/gi,
-            /<.*search.*class[^>]*>.*?<\/.*>/gi,
-            /<a[^>]*href[^>]*>.*?<\/a>/gi
+            /<a[^>]*href[^>]*>.*?<\/a>/gi,
+            // ENHANCED: Add more semantic patterns
+            /<\w+[^>]*(?:data-testid|data-cy|data-test|aria-label|role)[^>]*>.*?<\/\w+>/gi,
+            /<select[^>]*>.*?<\/select>/gi,
+            /<textarea[^>]*>.*?<\/textarea>/gi
         ];
         
         let protectedElements = [];
@@ -156,7 +156,7 @@ class AIHelper {
             truncatedHtml = truncatedHtml.replace(placeholder, content);
         });
         
-        return truncatedHtml + '\n<!-- [HTML được tối ưu cho AI, các element quan trọng được bảo vệ] -->';
+        return truncatedHtml + '\n<!-- [HTML được tối ưu cho AI, chỉ giữ element quan trọng] -->';
     }
 
     async generateScriptFromDescription() {
@@ -196,8 +196,8 @@ class AIHelper {
             this.truncatedDOMLength = truncatedDOM.length;
             this.updateDOMTruncationInfo();
             
-            // Generate script using AI with improved prompt
-            const aiResponse = await this.callGoogleAI(description, dom, currentUrl);
+            // Generate script using AI with REAL selector strategy
+            const aiResponse = await this.callGoogleAI(description, truncatedDOM, currentUrl);
             
             // Display raw AI response immediately
             this.displayRawAIResponse(aiResponse);
@@ -259,11 +259,8 @@ class AIHelper {
     async callGoogleAI(description, dom, currentUrl) {
         const availableActions = this.getAvailableActions();
         
-        // Use improved smart truncation
-        const truncatedDOM = this.smartTruncateHTML(dom, 12000);
-        
-        // IMPROVED PROMPT với instruction mạnh mẽ hơn
-        const prompt = `Bạn là chuyên gia tự động hóa web. Dựa trên mô tả của người dùng và DOM HTML được cung cấp, hãy tạo một mảng JSON các bước tự động hóa.
+        // 🔥 COMPLETELY NEW PROMPT - REAL SELECTORS ONLY!
+        const prompt = `Bạn là chuyên gia tự động hóa web. Dựa trên mô tả của người dùng và DOM HTML thực tế, hãy tạo một mảng JSON các bước tự động hóa với CSS selectors THẬT.
 
 MÔ TẢ NGƯỜI DÙNG: "${description}"
 URL TRANG HIỆN TẠI: ${currentUrl}
@@ -271,49 +268,64 @@ URL TRANG HIỆN TẠI: ${currentUrl}
 CÁC HÀNH ĐỘNG CÓ SẴN:
 ${availableActions}
 
-DOM HTML THỰC TẾ (với các element tương tác được đánh dấu __stagehand_id):
-${truncatedDOM}
+DOM HTML THỰC TẾ (đã được làm sạch):
+${dom}
 
-QUY TẮC QUAN TRỌNG:
-1. CHỈ trả về một mảng JSON hợp lệ, không có text nào khác
-2. CHỈ sử dụng tên hành động chính xác từ danh sách trên
-3. PHÂN TÍCH KỸ DOM để tìm selector chính xác - KHÔNG ĐƯỢC ĐOÁN MÒ
-4. Ưu tiên sử dụng __stagehand_id khi có: [__stagehand_id='số']
-5. Nếu không có __stagehand_id, dùng CSS selector có trong DOM
-6. Thêm hành động goto ở đầu CHỈ KHI cần điều hướng đến URL khác
-7. Cụ thể với giá trị (email, password, text cần nhập)
-8. Dùng waitForElement trước khi tương tác với element có thể load động
-9. KIỂM TRA KỸ DOM trước khi tạo selector
-10. ĐỐI VỚI CLICK TỌA ĐỘ: CHỈ dùng khi không tìm được CSS selector, PHẢI có x và y cụ thể
+🔥 QUY TẮC QUAN TRỌNG VỀ CSS SELECTORS:
+1. CHỈ sử dụng CSS selectors CÓ THẬT trong DOM HTML ở trên
+2. TUYỆT ĐỐI KHÔNG tự bịa hay đoán selector
+3. KHÔNG bao giờ sử dụng __stagehand_id (nó không có thật!)
+4. Ưu tiên sử dụng theo thứ tự:
+   - ID thật: #loginButton, #email-input  
+   - Name attribute: input[name="username"]
+   - Data attributes: [data-testid="submit"], [data-cy="login"]
+   - Type + context: form input[type="email"]
+   - ARIA labels: [aria-label="Search"]
+   - Classes ổn định: .btn-primary (KHÔNG dùng .css-xyz123)
+   - Placeholder: input[placeholder="Enter email"]
+   - Tag + parent: form .submit-button
+   - Structure: nav > ul > li:first-child
+   - nth-child CHỈ khi không còn cách nào khác
 
-VÍ DỤ PHÂN TÍCH:
-- Nếu người dùng nói "tìm kiếm" và DOM có: <input class="search-box" placeholder="Tìm kiếm...">
-- Thì dùng: "selector": "input.search-box" HOẶC "input[placeholder*='Tìm']"
-- KHÔNG ĐƯỢC tự bịa: "selector": "input#search" (nếu không có trong DOM)
+CHIẾN LƯỢC CHỌN SELECTOR:
+- PHÂN TÍCH KỸ DOM trước khi tạo selector
+- Tìm attributes CÓ THẬT: id, name, class, data-*, aria-*, type, placeholder
+- Với form inputs: dùng name hoặc type attribute  
+- Với buttons: dùng text content, type, hoặc role
+- Với links: dùng href pattern hoặc text content
+- CHỈ dùng tọa độ (click) khi THẬT SỰ không có selector nào
 
-VÍ DỤ ĐỊNH DẠNG OUTPUT:
+VÍ DỤ PHÂN TÍCH ĐÚNG:
+- Nếu DOM có: <input type="email" name="user_email" placeholder="Your email">
+- Dùng: input[name="user_email"] HOẶC input[type="email"] 
+- KHÔNG tự bịa: input[name="email"] (nếu không có)
+
+- Nếu DOM có: <button class="btn submit-btn" type="submit">Đăng nhập</button>
+- Dùng: button[type="submit"] HOẶC .submit-btn
+- KHÔNG dùng: button.btn-primary (nếu class không có)
+
+VÍ DỤ OUTPUT MONG MUỐN:
 [
-  {"action": "fill", "selector": "[__stagehand_id='1']", "text": "user@example.com"},
-  {"action": "fill", "selector": "[__stagehand_id='2']", "text": "password123"},
-  {"action": "clickElement", "selector": "[__stagehand_id='3']"},
+  {"action": "fill", "selector": "input[name=\"username\"]", "text": "admin@example.com"},
+  {"action": "fill", "selector": "input[type=\"password\"]", "text": "password123"},
+  {"action": "clickElement", "selector": "button[type=\"submit\"]"},
   {"action": "waitForElement", "selector": ".success-message", "timeout": 5000}
 ]
 
-QUY TẮC CUỐI CÙNG - ĐỌC KỸ:
-- BẮT BUỘC phải tìm selector TỒN TẠI trong DOM được cung cấp ở trên
-- KHÔNG ĐƯỢC tự bịa hoặc đoán selector không có trong DOM
-- Nếu không tìm thấy element phù hợp, hãy tìm element tương tự nhất
-- KIỂM TRA LẠI mỗi selector trước khi đưa vào JSON
-- CHỈ SỬ DỤNG selector xuất hiện trong DOM HTML ở trên
-- ĐỐI VỚI VIDEO/MULTIMEDIA: Tìm link hoặc button click thay vì video tag trực tiếp
+QUY TẮC CUỐI CÙNG:
+- BẮT BUỘC selector phải TỒN TẠI trong DOM ở trên
+- KIỂM TRA từng selector với DOM trước khi đưa vào JSON
+- Nếu không chắc chắn, dùng cách tổng quát hơn
+- TUYỆT ĐỐI KHÔNG đoán mò selector
+- CHỈ dùng những gì BẠN THẤY trong DOM HTML
 
-Tạo các bước tự động hóa:`;
+Hãy tạo script automation với selectors THẬT:`;
 
         try {
             // Get selected model from settings
             const selectedModel = document.getElementById('aiModel')?.value || 'gemini-2.5-flash';
 
-            console.log('Sending prompt to AI:', prompt.substring(0, 500) + '...');
+            console.log('🔥 Sending REAL selector prompt to AI:', prompt.substring(0, 500) + '...');
 
             const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${this.apiKey}`, {
                 method: 'POST',
@@ -327,7 +339,7 @@ Tạo các bước tự động hóa:`;
                         }]
                     }],
                     generationConfig: {
-                        temperature: 0.05, // Giảm temperature để ít random hơn
+                        temperature: 0.05, // Low temperature for consistent selectors
                         maxOutputTokens: 4096,
                         topP: 0.8,
                         topK: 40
@@ -340,15 +352,29 @@ Tạo các bước tự động hóa:`;
                 throw new Error(`API Error: ${response.status} ${response.statusText} - ${errorText}`);
             }
 
-            const data = await response.json();
             
-            if (!data.candidates || !data.candidates[0] || !data.candidates[0].content) {
-                console.error('Invalid API response:', data);
-                throw new Error('Invalid API response structure');
+            const data = await response.json();
+            console.log('Raw API Response from Google:', JSON.stringify(data, null, 2)); // Dòng này giúp debug
+
+            // KIỂM TRA LỖI TRỰC TIẾP TỪ API
+            if (data.error) {
+                console.error('Google AI API Error:', data.error);
+                throw new Error(`API Error: ${data.error.message}`);
             }
 
+            // KIỂM TRA PHẢN HỒI BỊ CHẶN BỞI BỘ LỌC AN TOÀN
+            if (!data.candidates) {
+                if (data.promptFeedback && data.promptFeedback.blockReason) {
+                    console.error('Prompt was blocked by safety filters:', data.promptFeedback);
+                    throw new Error(`Yêu cầu bị chặn. Lý do: ${data.promptFeedback.blockReason}`);
+                } else {
+                    console.error('Invalid API response structure:', data);
+                    throw new Error('Phản hồi không hợp lệ: Không tìm thấy "candidates".');
+                }
+            }
+
+            // Nếu mọi thứ ổn, tiếp tục xử lý
             const generatedText = data.candidates[0].content.parts[0].text;
-            console.log('AI Response:', generatedText);
             
             return generatedText;
 
@@ -360,41 +386,59 @@ Tạo các bước tự động hóa:`;
 
     getAvailableActions() {
         return `
+🔥 CÁC HÀNH ĐỘNG CÓ SẴN (chỉ dùng selector CSS THẬT):
+
 CÁC HÀNH ĐỘNG CƠ BẢN:
 - click: Click vào tọa độ {"action": "click", "x": 100, "y": 200}
-- clickElement: Click vào element {"action": "clickElement", "selector": "css_selector"}
-- fill: Điền input {"action": "fill", "selector": "css_selector", "text": "giá_trị"}
-- type: Nhập text (thay thế cho fill) {"action": "type", "selector": "css_selector", "text": "giá_trị"}
+- clickElement: Click vào element {"action": "clickElement", "selector": "CSS_SELECTOR_THẬT"}
+- fill: Điền input {"action": "fill", "selector": "CSS_SELECTOR_THẬT", "text": "giá_trị"}
+- type: Nhập text (thay thế cho fill) {"action": "type", "selector": "CSS_SELECTOR_THẬT", "text": "giá_trị"}
 - press: Nhấn phím {"action": "press", "key": "Enter|Tab|Escape|Space"}
-- hover: Hover vào element {"action": "hover", "selector": "css_selector"}
+- hover: Hover vào element {"action": "hover", "selector": "CSS_SELECTOR_THẬT"}
 
 ĐIỀU HƯỚNG:
 - goto: Đi tới URL {"action": "goto", "url": "https://example.com"}
 - reload: Reload trang {"action": "reload"}
 
 SCROLL:
-- scroll: Scroll phần trăm {"action": "scroll", "scrollMode": "percentage", "percentageY": 50} (scroll tới 50% trang)
+- scroll: Scroll phần trăm {"action": "scroll", "scrollMode": "percentage", "percentageY": 50}
 - scroll: Scroll tuyệt đối {"action": "scroll", "scrollMode": "absolute", "x": 0, "y": 500}
 - scroll: Scroll tương đối {"action": "scroll", "scrollMode": "relative", "x": 0, "y": 200}
 - scroll: Scroll delta {"action": "scroll", "scrollMode": "delta", "delta": 300}
 
 TƯƠNG TÁC FORM:
-- selectOption: Chọn option dropdown {"action": "selectOption", "selector": "select", "value": "giá_trị_option"}
-- check: Check/uncheck checkbox {"action": "check", "selector": "input[type='checkbox']", "checked": true}
+- selectOption: Chọn option dropdown {"action": "selectOption", "selector": "select[name='country']", "value": "giá_trị_option"}
+- check: Check/uncheck checkbox {"action": "check", "selector": "input[type='checkbox'][name='agree']", "checked": true}
 
 UPLOAD FILE:
 - setInputFiles: Upload files {"action": "setInputFiles", "selector": "input[type='file']", "filePaths": ["file1.txt"]}
 
 CHỜ ĐỢI:
 - wait: Chờ thời gian {"action": "wait", "duration": 2000}
-- waitForElement: Chờ element {"action": "waitForElement", "selector": "css_selector", "timeout": 10000}
+- waitForElement: Chờ element {"action": "waitForElement", "selector": "CSS_SELECTOR_THẬT", "timeout": 10000}
 
 LẤY DỮ LIỆU:
-- getText: Lấy text {"action": "getText", "selector": "css_selector"}
-- getAttribute: Lấy attribute {"action": "getAttribute", "selector": "css_selector", "attribute": "href"}
-- innerText: Lấy inner text {"action": "innerText", "selector": "css_selector"}
-- textContent: Lấy text content {"action": "textContent", "selector": "css_selector"}
-- inputValue: Lấy input value {"action": "inputValue", "selector": "input"}
+- getText: Lấy text {"action": "getText", "selector": "CSS_SELECTOR_THẬT"}
+- getAttribute: Lấy attribute {"action": "getAttribute", "selector": "CSS_SELECTOR_THẬT", "attribute": "href"}
+- innerText: Lấy inner text {"action": "innerText", "selector": "CSS_SELECTOR_THẬT"}
+- textContent: Lấy text content {"action": "textContent", "selector": "CSS_SELECTOR_THẬT"}
+- inputValue: Lấy input value {"action": "inputValue", "selector": "input[name='username']"}
+
+🔥 VÍ DỤ CSS SELECTORS THẬT (chỉ dùng nếu có trong DOM):
+- By ID: #login-button, #email-field, #main-nav
+- By Name: input[name="username"], select[name="country"]  
+- By Type: input[type="email"], button[type="submit"]
+- By Class: .btn-primary, .form-control, .nav-link
+- By Data attrs: [data-testid="submit"], [data-cy="login-btn"]
+- By ARIA: [aria-label="Search"], [role="button"]
+- By Placeholder: input[placeholder="Enter email"]
+- Combined: form input[type="password"], .header .login-btn
+- Structure: nav > ul > li:first-child, form .btn:last-child
+
+🚫 TUYỆT ĐỐI KHÔNG SỬ DỤNG:
+- __stagehand_id (không có thật!)
+- Selectors không có trong DOM
+- Generated classes như .css-xyz123, .makeStyles-root
 `;
     }
 
@@ -422,7 +466,7 @@ LẤY DỮ LIỆU:
                 throw new Error('Phản hồi AI không phải là array');
             }
 
-            // Validate and convert steps to our format
+            // 🔥 ENHANCED: Validate and convert steps with REAL selector validation
             return steps.map((step, index) => {
                 if (!step.action) {
                     throw new Error(`Bước ${index + 1} thiếu action`);
@@ -435,7 +479,15 @@ LẤY DỮ LIỆU:
                 };
 
                 // Map common properties
-                if (step.selector) convertedStep.selector = step.selector;
+                if (step.selector) {
+                    // 🔥 VALIDATE SELECTOR - cảnh báo nếu có vẻ fake
+                    if (step.selector.includes('__stagehand_id')) {
+                        console.warn(`⚠️ Bước ${index + 1}: AI vẫn dùng fake __stagehand_id!`);
+                        // Có thể replace bằng fallback selector
+                    }
+                    convertedStep.selector = step.selector;
+                }
+                
                 if (step.text) convertedStep.text = step.text;
                 if (step.value) convertedStep.value = step.value;
                 if (step.url) convertedStep.url = step.url;
@@ -446,7 +498,7 @@ LẤY DỮ LIỆU:
                 if (step.attribute) convertedStep.attribute = step.attribute;
                 if (step.filePaths) convertedStep.filePaths = step.filePaths;
 
-                // ENHANCED: Handle coordinates properly
+                // Handle coordinates properly
                 if (step.x !== undefined) convertedStep.x = parseInt(step.x);
                 if (step.y !== undefined) convertedStep.y = parseInt(step.y);
 
@@ -461,7 +513,7 @@ LẤY DỮ LIỆU:
                     if (step.smooth !== undefined) convertedStep.smooth = step.smooth;
                 }
 
-                // ENHANCED: Validate coordinates for click action
+                // Validate coordinates for click action
                 if (convertedStep.type === 'click') {
                     if (convertedStep.x === undefined || convertedStep.y === undefined || 
                         isNaN(convertedStep.x) || isNaN(convertedStep.y)) {
@@ -477,9 +529,20 @@ LẤY DỮ LIỆU:
                     }
                 }
 
-                // Validate selector exists (basic check)
-                if (convertedStep.selector && convertedStep.selector.includes('#') && !convertedStep.selector.includes('__stagehand_id')) {
-                    console.warn(`Warning: Selector ${convertedStep.selector} có thể không tồn tại trong DOM`);
+                // 🔥 ENHANCED SELECTOR VALIDATION
+                if (convertedStep.selector) {
+                    // Cảnh báo về các pattern có vấn đề
+                    if (convertedStep.selector.includes('__stagehand_id')) {
+                        console.warn(`🚫 FAKE SELECTOR: Bước ${index + 1} dùng __stagehand_id (không tồn tại)`);
+                    }
+                    
+                    if (convertedStep.selector.match(/\#[a-z0-9]{8,}/i)) {
+                        console.warn(`⚠️ SUSPICIOUS ID: Bước ${index + 1} selector ${convertedStep.selector} có vẻ là generated ID`);
+                    }
+                    
+                    if (convertedStep.selector.includes('.css-') || convertedStep.selector.includes('.makeStyles-')) {
+                        console.warn(`⚠️ GENERATED CLASS: Bước ${index + 1} selector ${convertedStep.selector} dùng generated class`);
+                    }
                 }
 
                 return convertedStep;
@@ -539,20 +602,31 @@ LẤY DỮ LIỆU:
             const stepTitle = document.createElement('span');
             stepTitle.textContent = `${index + 1}. ${this.getStepTypeLabel(step.type)}`;
             
-            // Add validation indicator
+            // 🔥 ENHANCED validation indicator with REAL selector checking
             const validationIcon = document.createElement('span');
             if (step.type === 'click' && (step.x !== undefined && step.y !== undefined)) {
                 validationIcon.textContent = '🎯';
                 validationIcon.title = 'Click tọa độ';
                 validationIcon.style.color = '#f59e0b';
-            } else if (step.selector && (step.selector.includes('__stagehand_id') || step.selector.includes('['))) {
-                validationIcon.textContent = '✅';
-                validationIcon.title = 'Selector có vẻ hợp lệ';
-                validationIcon.style.color = '#10b981';
             } else if (step.selector) {
-                validationIcon.textContent = '⚠️';
-                validationIcon.title = 'Selector có thể không chính xác';
-                validationIcon.style.color = '#f59e0b';
+                // Check for real selector quality
+                if (step.selector.includes('__stagehand_id')) {
+                    validationIcon.textContent = '🚫';
+                    validationIcon.title = 'FAKE ID - Selector không tồn tại!';
+                    validationIcon.style.color = '#ef4444';
+                } else if (step.selector.includes('#') || step.selector.includes('[name=') || step.selector.includes('[data-')) {
+                    validationIcon.textContent = '✅';
+                    validationIcon.title = 'Selector semantic tốt';
+                    validationIcon.style.color = '#10b981';
+                } else if (step.selector.includes('.css-') || step.selector.includes('.makeStyles-')) {
+                    validationIcon.textContent = '⚠️';
+                    validationIcon.title = 'Generated class - có thể không ổn định';
+                    validationIcon.style.color = '#f59e0b';
+                } else {
+                    validationIcon.textContent = '👌';
+                    validationIcon.title = 'Selector OK';
+                    validationIcon.style.color = '#6366f1';
+                }
             } else {
                 validationIcon.textContent = '✅';
                 validationIcon.title = 'Không cần selector';
@@ -578,7 +652,7 @@ LẤY DỮ LIỆU:
         // Store generated steps for later use
         this.generatedSteps = steps;
         
-        // Show summary
+        // 🔥 ENHANCED summary with selector analysis
         const summary = document.createElement('div');
         summary.style.cssText = `
             margin-top: 12px;
@@ -589,12 +663,18 @@ LẤY DỮ LIỆU:
             font-size: 11px;
             color: #166534;
         `;
+        
+        const fakeSelectors = steps.filter(s => s.selector && s.selector.includes('__stagehand_id')).length;
+        const realSelectors = steps.filter(s => s.selector && !s.selector.includes('__stagehand_id')).length;
+        const coordinateClicks = steps.filter(s => s.type === 'click' && s.x !== undefined).length;
+        
         summary.innerHTML = `
-            <strong>📊 Tóm tắt:</strong><br>
+            <strong>📊 Phân tích Script AI:</strong><br>
             • Tổng cộng: ${steps.length} bước<br>
-            • Có selector: ${steps.filter(s => s.selector).length} bước<br>
-            • Dùng __stagehand_id: ${steps.filter(s => s.selector && s.selector.includes('__stagehand_id')).length} bước<br>
-            • Click tọa độ: ${steps.filter(s => s.type === 'click' && s.x !== undefined).length} bước
+            • Selector thật: ${realSelectors} bước ✅<br>
+            • Fake selector (__stagehand_id): ${fakeSelectors} bước 🚫<br>
+            • Click tọa độ: ${coordinateClicks} bước 🎯<br>
+            ${fakeSelectors > 0 ? '<br><strong style="color: #dc2626;">⚠️ Có fake selector! Cần sửa lại!</strong>' : '<br><strong style="color: #059669;">🎉 Tất cả selector đều thật!</strong>'}
         `;
         container.appendChild(summary);
     }

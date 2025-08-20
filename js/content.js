@@ -1,4 +1,4 @@
-// Enhanced Web Automation Suite - Content Script with Full Step Support
+// Enhanced Web Automation Suite - Content Script with REAL Selector Strategy
 
 // ====================================================================
 // TAB IDENTIFICATION & STATE
@@ -341,24 +341,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 
             case "getSerializedDOM":
                 try {
-                    console.log('🔄 Starting Shadow DOM aware serialization...');
+                    console.log('🔄 Starting REAL DOM serialization (NO stagehand_id)...');
                     
-                    // Test Shadow DOM capabilities first
-                    const shadowHosts = Array.from(document.querySelectorAll('*'))
-                        .filter(el => el.shadowRoot);
-                    
-                    console.log(`🔍 Found ${shadowHosts.length} Shadow DOM hosts on page`);
-                    
-                    // Run the enhanced serialization
                     const serializedDOM = serializeDOM();
                     
                     // Validate results
-                    const interactiveCount = (serializedDOM.match(/__stagehand_id=/g) || []).length;
-                    const shadowProcessedCount = (serializedDOM.match(/data-shadow-processed="true"/g) || []).length;
+                    const interactiveCount = countInteractiveElements(document);
                     
                     console.log(`✅ Serialization complete:`);
-                    console.log(`   - Interactive elements: ${interactiveCount}`);
-                    console.log(`   - Shadow DOM processed: ${shadowProcessedCount}`);
+                    console.log(`   - Interactive elements found: ${interactiveCount}`);
                     console.log(`   - Total length: ${serializedDOM.length} chars`);
                     
                     sendResponse({ 
@@ -366,14 +357,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                         dom: serializedDOM, 
                         tabId: getCurrentTabId(),
                         metadata: {
-                            shadowHosts: shadowHosts.length,
                             interactiveElements: interactiveCount,
-                            shadowProcessed: shadowProcessedCount,
                             totalLength: serializedDOM.length
                         }
                     });
                 } catch (error) {
-                    console.error('❌ Shadow DOM serialization failed:', error);
+                    console.error('❌ DOM serialization failed:', error);
                     sendResponse({ 
                         success: false, 
                         error: error.message, 
@@ -1275,12 +1264,12 @@ async function executeInputValueStep(step) {
 // ====================================================================
 
 // ====================================================================
-// ENHANCED DOM SERIALIZATION FOR AI - WITH SHADOW DOM SUPPORT
+// IMPROVED DOM SERIALIZATION - NO STAGEHAND_ID!
 // ====================================================================
 
 /**
- * Serialize the DOM, including traversing through Shadow DOMs recursively.
- * This is the core function to fix the issue on modern websites.
+ * 🔥 FIXED SERIALIZATION - NO MORE FAKE IDs!
+ * Serialize DOM with REAL selectors only
  */
 function serializeDOM() {
     const BLACKLISTED_TAGS = [
@@ -1288,20 +1277,15 @@ function serializeDOM() {
         'svg', 'canvas', 'audio', 'video'
     ];
 
-    let nextId = 1;
-    const elementMetadata = [];
-
     /**
-     * Recursively traverses a node and its shadow root (if it exists),
-     * cloning and cleaning it for AI processing.
-     * @param {Node} node - The node to traverse.
-     * @returns {Node} A cleaned and cloned version of the node.
+     * Recursively traverses and clones DOM nodes
+     * @param {Node} node - The node to traverse
+     * @returns {Node} A cleaned and cloned version
      */
     function traverseAndClone(node) {
-        // 1. Filter out unwanted nodes
+        // Filter out unwanted nodes
         if (node.nodeType === Node.COMMENT_NODE) return null;
         if (node.nodeType === Node.TEXT_NODE) {
-            // Keep text nodes with meaningful content
             return node.textContent.trim() ? document.createTextNode(node.textContent.trim()) : null;
         }
         if (node.nodeType !== Node.ELEMENT_NODE) return null;
@@ -1315,27 +1299,25 @@ function serializeDOM() {
              return null;
         }
 
-        // 2. Clone the element itself (without children)
+        // Clone the element itself (without children)
         const clonedElement = document.createElement(tagName);
 
-        // 3. Process and copy essential attributes
+        // 🔥 COPY ONLY REAL ATTRIBUTES - NO FAKE IDs!
         const keepAttrs = [
             'id', 'class', 'href', 'aria-label', 'placeholder', 'name', 
-            'type', 'value', 'title', 'alt', 'for', 'role'
+            'type', 'value', 'title', 'alt', 'for', 'role', 'data-testid',
+            'data-cy', 'data-test', 'data-qa', 'aria-labelledby'
         ];
+        
         for (const attr of node.attributes) {
             if (keepAttrs.includes(attr.name)) {
                 clonedElement.setAttribute(attr.name, attr.value);
             }
         }
         
-        // 4. Add Stagehand ID for interactable elements
+        // 🎯 ADD AUTOMATION HINTS for interactive elements (NOT fake IDs!)
         if (isInteractableElement(node)) {
-            const stagehandId = String(nextId++);
-            clonedElement.setAttribute('__stagehand_id', stagehandId);
-            
             const metadata = {
-                id: stagehandId,
                 tag: tagName,
                 type: node.type || null,
                 disabled: node.disabled || false,
@@ -1344,16 +1326,18 @@ function serializeDOM() {
                 placeholder: node.placeholder || null,
                 value: node.value || null
             };
-            elementMetadata.push(metadata);
 
-            // Add helpful data attributes for the AI
+            // Add data attributes for AI context (but not selectors!)
             if (node.disabled) clonedElement.setAttribute('data-disabled', 'true');
             if (node.required) clonedElement.setAttribute('data-required', 'true');
+            
+            // Add comment hint for AI (not an attribute)
+            const hint = document.createComment(`INTERACTIVE: ${JSON.stringify(metadata)}`);
+            clonedElement.appendChild(hint);
         }
 
-        // 5. **THE CORE LOGIC: Recurse into Shadow DOM or children**
+        // Recurse into Shadow DOM or children
         if (node.shadowRoot) {
-            // 🔑 KEY FIX: If a shadow root exists, traverse its children
             console.log(`Traversing Shadow DOM for ${tagName}`);
             clonedElement.setAttribute('data-shadow-processed', 'true');
             for (const childNode of node.shadowRoot.childNodes) {
@@ -1361,14 +1345,13 @@ function serializeDOM() {
                 if (clonedChild) clonedElement.appendChild(clonedChild);
             }
         } else {
-            // Otherwise, traverse the regular children
             for (const childNode of node.childNodes) {
                 const clonedChild = traverseAndClone(childNode);
                 if (clonedChild) clonedElement.appendChild(clonedChild);
             }
         }
         
-        // 6. Final cleanup: remove empty elements
+        // Final cleanup: remove empty non-interactive elements
         if (clonedElement.childNodes.length === 0 && !clonedElement.textContent.trim() && !isInteractableElement(clonedElement)) {
             return null;
         }
@@ -1379,7 +1362,7 @@ function serializeDOM() {
     const clonedBody = traverseAndClone(document.body);
     if (!clonedBody) return "<body></body>";
 
-    const metadataComment = `\n\n`;
+    const metadataComment = `\n<!-- 🔥 CLEAN DOM - NO FAKE IDs! Use real selectors only. -->\n`;
     return metadataComment + clonedBody.outerHTML;
 }
 
@@ -1405,7 +1388,7 @@ function isElementVisible(el) {
     }
 }
 
-// Enhanced interactive element detection (no changes needed)
+// Enhanced interactive element detection
 function isInteractableElement(el) {
     const interactableTags = ['button', 'a', 'input', 'textarea', 'select', 'option'];
     const interactableRoles = [
@@ -1429,6 +1412,12 @@ function isInteractableElement(el) {
     if (el.contentEditable === 'true') return true;
     
     return false;
+}
+
+// Count interactive elements helper
+function countInteractiveElements(container = document) {
+    const elements = Array.from(container.querySelectorAll('*'));
+    return elements.filter(el => isInteractableElement(el)).length;
 }
 
 function findElementByRole(role, name, timeout = 5000) {
@@ -1575,6 +1564,234 @@ function findElementByPlaceholder(placeholder, timeout = 5000) {
 }
 
 // ====================================================================
+// 🔥 IMPROVED SELECTOR GENERATION - REAL SELECTORS ONLY!
+// ====================================================================
+
+/**
+ * Generate stable, real CSS selectors
+ * Priority: semantic > data attrs > stable classes > structure > position
+ */
+function generateSelector(element) {
+    if (!element || !element.tagName) return null;
+    
+    // 1. Try semantic ID (avoid generated IDs like 'comp-xyz123')
+    if (element.id && isStableId(element.id)) {
+        return `#${CSS.escape(element.id)}`;
+    }
+    
+    // 2. Try name attribute (very stable for forms)
+    if (element.name) {
+        const selector = `${element.tagName.toLowerCase()}[name="${CSS.escape(element.name)}"]`;
+        if (isUniqueSelector(selector)) return selector;
+    }
+    
+    // 3. Try data attributes (test IDs, etc)
+    const dataAttrs = ['data-testid', 'data-cy', 'data-test', 'data-qa'];
+    for (const attr of dataAttrs) {
+        const value = element.getAttribute(attr);
+        if (value) {
+            const selector = `[${attr}="${CSS.escape(value)}"]`;
+            if (isUniqueSelector(selector)) return selector;
+        }
+    }
+    
+    // 4. Try aria-label (semantic)
+    const ariaLabel = element.getAttribute('aria-label');
+    if (ariaLabel) {
+        const selector = `${element.tagName.toLowerCase()}[aria-label="${CSS.escape(ariaLabel)}"]`;
+        if (isUniqueSelector(selector)) return selector;
+    }
+    
+    // 5. Try type + context for inputs
+    if (element.type && ['input', 'button'].includes(element.tagName.toLowerCase())) {
+        const selector = `${element.tagName.toLowerCase()}[type="${element.type}"]`;
+        if (isUniqueSelector(selector)) return selector;
+        
+        // Try with parent context
+        const parent = element.parentElement;
+        if (parent && parent.tagName !== 'BODY') {
+            const parentSelector = getParentSelector(parent);
+            if (parentSelector) {
+                const contextSelector = `${parentSelector} ${selector}`;
+                if (isUniqueSelector(contextSelector)) return contextSelector;
+            }
+        }
+    }
+    
+    // 6. Try stable classes (avoid generated ones)
+    const stableClasses = getStableClasses(element);
+    if (stableClasses.length > 0) {
+        const classSelector = `${element.tagName.toLowerCase()}.${stableClasses.join('.')}`;
+        if (isUniqueSelector(classSelector)) return classSelector;
+    }
+    
+    // 7. Try placeholder for inputs
+    const placeholder = element.getAttribute('placeholder');
+    if (placeholder) {
+        const selector = `${element.tagName.toLowerCase()}[placeholder="${CSS.escape(placeholder)}"]`;
+        if (isUniqueSelector(selector)) return selector;
+    }
+    
+    // 8. Try text content for buttons/links
+    if (['button', 'a'].includes(element.tagName.toLowerCase())) {
+        const text = element.textContent?.trim();
+        if (text && text.length < 50) {
+            // This is for display only - actual implementation would use text matching
+            return `${element.tagName.toLowerCase()}:contains("${CSS.escape(text)}")`;
+        }
+    }
+    
+    // 9. Try tag with specific attributes combination
+    const selector = buildAttributeSelector(element);
+    if (selector && isUniqueSelector(selector)) return selector;
+    
+    // 10. Try structural selector with parent context
+    const structuralSelector = buildStructuralSelector(element);
+    if (structuralSelector && isUniqueSelector(structuralSelector)) return structuralSelector;
+    
+    // 11. Last resort: nth-child (least stable)
+    return buildNthChildSelector(element);
+}
+
+/**
+ * Check if ID is stable (not auto-generated)
+ */
+function isStableId(id) {
+    // Avoid IDs that look generated
+    const generatedPatterns = [
+        /^[a-z0-9]{8,}$/i, // long random strings
+        /^comp-/i,         // component IDs
+        /^mui-/i,          // Material-UI
+        /^:r[0-9a-z]+:/i,  // React IDs
+        /^react-/i,        // React IDs
+        /^\d+$/,           // pure numbers
+    ];
+    
+    return !generatedPatterns.some(pattern => pattern.test(id));
+}
+
+/**
+ * Get stable CSS classes (avoid generated ones)
+ */
+function getStableClasses(element) {
+    const classes = Array.from(element.classList);
+    return classes.filter(cls => {
+        // Avoid generated class patterns
+        const generatedPatterns = [
+            /^css-[a-z0-9]+$/i,     // CSS-in-JS
+            /^makeStyles-/i,        // Material-UI
+            /^jss[0-9]+$/i,         // JSS
+            /^[a-z0-9]{6,}$/i,      // Long random strings
+            /^_[a-z0-9]+$/i,        // Webpack CSS modules
+        ];
+        
+        return !generatedPatterns.some(pattern => pattern.test(cls));
+    }).slice(0, 3); // Max 3 classes for readability
+}
+
+/**
+ * Get parent selector for context
+ */
+function getParentSelector(parent) {
+    if (parent.id && isStableId(parent.id)) {
+        return `#${CSS.escape(parent.id)}`;
+    }
+    
+    const stableClasses = getStableClasses(parent);
+    if (stableClasses.length > 0) {
+        return `${parent.tagName.toLowerCase()}.${stableClasses[0]}`;
+    }
+    
+    // Try semantic tags
+    const semanticTags = ['nav', 'header', 'footer', 'main', 'article', 'section', 'form'];
+    if (semanticTags.includes(parent.tagName.toLowerCase())) {
+        return parent.tagName.toLowerCase();
+    }
+    
+    return null;
+}
+
+/**
+ * Build selector from multiple attributes
+ */
+function buildAttributeSelector(element) {
+    const tagName = element.tagName.toLowerCase();
+    const attrs = [];
+    
+    // Add type if available
+    if (element.type) attrs.push(`type="${element.type}"`);
+    
+    // Add role if available
+    const role = element.getAttribute('role');
+    if (role) attrs.push(`role="${role}"`);
+    
+    // Add title if short and stable
+    const title = element.getAttribute('title');
+    if (title && title.length < 30) attrs.push(`title="${CSS.escape(title)}"`);
+    
+    if (attrs.length > 0) {
+        return `${tagName}[${attrs.join('][')}]`;
+    }
+    
+    return null;
+}
+
+/**
+ * Build structural selector with parent
+ */
+function buildStructuralSelector(element) {
+    const parent = element.parentElement;
+    if (!parent || parent.tagName === 'BODY') return null;
+    
+    const parentSelector = getParentSelector(parent);
+    if (!parentSelector) return null;
+    
+    const tagName = element.tagName.toLowerCase();
+    const childSelector = `${parentSelector} > ${tagName}`;
+    
+    // If not unique, try with first/last
+    if (!isUniqueSelector(childSelector)) {
+        const siblings = Array.from(parent.children).filter(child => 
+            child.tagName.toLowerCase() === tagName
+        );
+        
+        if (siblings.length > 1) {
+            const index = siblings.indexOf(element);
+            if (index === 0) return `${parentSelector} > ${tagName}:first-child`;
+            if (index === siblings.length - 1) return `${parentSelector} > ${tagName}:last-child`;
+        }
+    }
+    
+    return childSelector;
+}
+
+/**
+ * Build nth-child selector (last resort)
+ */
+function buildNthChildSelector(element) {
+    const parent = element.parentElement;
+    if (!parent) return element.tagName.toLowerCase();
+    
+    const siblings = Array.from(parent.children);
+    const index = siblings.indexOf(element) + 1;
+    
+    const parentSelector = getParentSelector(parent) || parent.tagName.toLowerCase();
+    return `${parentSelector} > :nth-child(${index})`;
+}
+
+/**
+ * Check if selector is unique in document
+ */
+function isUniqueSelector(selector) {
+    try {
+        const elements = document.querySelectorAll(selector);
+        return elements.length === 1;
+    } catch (e) {
+        return false;
+    }
+}
+
+// ====================================================================
 // FILE OPERATIONS FOR SETINPUTFILES
 // ====================================================================
 
@@ -1697,29 +1914,6 @@ function clearDocumentCookies() {
 // UTILITY FUNCTIONS
 // ====================================================================
 
-function generateSelector(element) {
-    if (element.id) {
-        return `#${element.id}`;
-    }
-    
-    if (element.className) {
-        const classes = element.className.split(' ').filter(c => c.trim());
-        if (classes.length > 0) {
-            return `.${classes.join('.')}`;
-        }
-    }
-    
-    // Fallback to tag name with nth-child
-    const parent = element.parentElement;
-    if (parent) {
-        const siblings = Array.from(parent.children);
-        const index = siblings.indexOf(element);
-        return `${element.tagName.toLowerCase()}:nth-child(${index + 1})`;
-    }
-    
-    return element.tagName.toLowerCase();
-}
-
 function getPageInfo() {
     return {
         url: window.location.href,
@@ -1758,7 +1952,7 @@ createSidebar();
 if (!window.automationSuiteInitialized) {
     window.automationSuiteInitialized = true;
     currentTabId = Math.random().toString(36).substr(2, 9);
-    console.log(`Enhanced content script initialized for tab: ${getCurrentTabId()}`);
+    console.log(`🔥 FIXED content script initialized for tab: ${getCurrentTabId()}`);
 } else {
     console.log(`Content script already initialized for tab: ${getCurrentTabId()}`);
 }
@@ -1771,22 +1965,40 @@ window.addEventListener('beforeunload', () => {
     console.log(`Tab ${getCurrentTabId()} is being unloaded`);
 });
 
-console.log('✅ Enhanced Shadow DOM support loaded successfully!');
-console.log('🛠️ Use window.debugShadowDOM?.test() to test on current page');
+console.log('✅ REAL DOM serialization loaded - NO MORE FAKE IDs!');
+console.log('🛠️ Use window.debugSelector?.test(element) to test selector generation');
 
 // Debug functions for console testing
-window.debugShadowDOM = {
-    test: function() {
-        console.log('🔍 Testing Shadow DOM...');
-        const hosts = Array.from(document.querySelectorAll('*')).filter(el => el.shadowRoot);
-        console.log(`Shadow DOM hosts: ${hosts.length}`);
+window.debugSelector = {
+    test: function(element) {
+        if (!element) {
+            console.log('🔍 Testing selector generation on document.body...');
+            element = document.body;
+        }
         
-        const dom = serializeDOM();
-        const interactive = (dom.match(/__stagehand_id=/g) || []).length;
-        console.log(`Interactive elements found: ${interactive}`);
-        console.log(`DOM length: ${dom.length} chars`);
+        console.log('Element:', element);
+        const selector = generateSelector(element);
+        console.log('Generated selector:', selector);
         
-        return { hosts: hosts.length, interactive, length: dom.length };
+        if (selector) {
+            try {
+                const found = document.querySelectorAll(selector);
+                console.log(`Found ${found.length} elements with this selector`);
+                if (found.length === 1) {
+                    console.log('✅ Unique selector!');
+                } else {
+                    console.log('⚠️ Not unique, may need improvement');
+                }
+                return { selector, count: found.length, unique: found.length === 1 };
+            } catch (e) {
+                console.log('❌ Invalid selector syntax:', e);
+                return { selector, error: e.message };
+            }
+        } else {
+            console.log('❌ Could not generate selector');
+            return { selector: null };
+        }
     },
-    serialize: () => serializeDOM()
+    serialize: () => serializeDOM(),
+    countInteractive: () => countInteractiveElements()
 };
