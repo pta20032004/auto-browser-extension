@@ -18,6 +18,7 @@
         <button class="nav-item active" data-page="automation">🎯 Auto</button>
         <button class="nav-item" data-page="scripts">📝 Script</button>
         <button class="nav-item" data-page="files">📁 Files</button>
+        <button class="nav-item" data-page="ai">🤖 AI</button>
         <button class="nav-item" data-page="cookies">🍪 Cookie</button>
         <button class="nav-item" data-page="settings">⚙️ Settings</button>
     </nav>
@@ -151,6 +152,65 @@
             <input type="file" id="fileInput" style="display: none;" multiple>
         </div>
 
+        <!-- AI Page -->
+        <div class="page" id="ai">
+            <!-- AI Configuration -->
+            <div class="file-upload-area">
+                <div class="upload-zone">
+                    <div class="upload-icon">🤖</div>
+                    <div class="upload-text">AI Script Generator</div>
+                    <div class="upload-subtext">Tạo script tự động từ mô tả ngôn ngữ tự nhiên</div>
+                </div>
+            </div>
+
+            <!-- API Key Configuration -->
+            <div class="current-task">
+                <div class="task-header">
+                    <div class="task-title">Cấu hình Google AI Studio</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">API Key</label>
+                    <input type="password" id="aiApiKey" class="form-control" placeholder="Nhập Google AI Studio API Key...">
+                    <div style="font-size: 10px; color: #666; margin-top: 4px;">
+                        Lấy API Key tại: <a href="https://aistudio.google.com/app/apikey" target="_blank">Google AI Studio</a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- AI Script Generation -->
+            <div class="current-task">
+                <div class="task-header">
+                    <div class="task-title">Tạo Script từ mô tả</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Mô tả hành động bằng tiếng Việt</label>
+                    <textarea id="aiDescription" class="form-control" rows="4" placeholder="Ví dụ: Đăng nhập với email admin@example.com và mật khẩu 123456, sau đó click vào nút Dashboard"></textarea>
+                </div>
+                <div class="task-controls">
+                    <button class="btn btn-primary" id="generateAIScriptBtn">🤖 Tạo Script</button>
+                    <button class="btn btn-secondary" id="clearAIScriptBtn">🗑️ Xóa</button>
+                </div>
+            </div>
+
+            <!-- Generated Script Display -->
+            <div class="file-list">
+                <div class="task-header">
+                    <div class="task-title">Script được tạo</div>
+                    <div class="task-controls">
+                        <button class="btn btn-success btn-small" id="useAIScriptBtn">📝 Sử dụng Script</button>
+                        <button class="btn btn-secondary btn-small" id="saveAIScriptBtn">💾 Lưu Script</button>
+                    </div>
+                </div>
+                <div id="aiGeneratedScript">
+                    <div class="empty-state">
+                        <div class="icon">🤖</div>
+                        <div class="title">Chưa có script nào</div>
+                        <div class="desc">Nhập mô tả để tạo script tự động</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Cookies Page -->
         <div class="page" id="cookies">
             <!-- Cookie Actions -->
@@ -267,6 +327,31 @@
             </div>
 
             <div class="setting-group">
+                <h3>Cài đặt AI</h3>
+                <div class="setting-item">
+                    <div class="setting-label">Model AI</div>
+                    <div class="setting-control">
+                        <select id="aiModel">
+                            <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+                            <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="setting-item">
+                    <div class="setting-label">Temperature</div>
+                    <div class="setting-control">
+                        <input type="number" id="aiTemperature" value="0.1" min="0" max="1" step="0.1">
+                    </div>
+                </div>
+                <div class="setting-item">
+                    <div class="setting-label">Max DOM size (chars)</div>
+                    <div class="setting-control">
+                        <input type="number" id="maxDomSize" value="8000" min="4000" max="20000">
+                    </div>
+                </div>
+            </div>
+
+            <div class="setting-group">
                 <h3>Cài đặt Playwright Export</h3>
                 <div class="setting-item">
                     <div class="setting-label">Ngôn ngữ export</div>
@@ -294,6 +379,12 @@
                         <input type="checkbox" id="includeViewportComments" checked>
                     </div>
                 </div>
+                <div class="setting-item">
+                    <div class="setting-label">Auto add goto URL</div>
+                    <div class="setting-control">
+                        <input type="checkbox" id="autoAddGotoUrl" checked>
+                    </div>
+                </div>
             </div>
 
             <div class="setting-group">
@@ -311,6 +402,8 @@
                             🎭 Complete Playwright Support<br>
                             🍪 Enhanced Cookie Management<br>
                             📁 File Picker for Scripts<br>
+                            🤖 AI Script Generation<br>
+                            🔄 For/While Loops<br>
                             🔧 All Step Types Fixed
                         </div>
                     </div>
@@ -343,6 +436,10 @@
                         <option value="hover">Hover</option>
                         <option value="goto">Đi tới URL</option>
                         <option value="reload">Reload trang</option>
+                    </optgroup>
+                    <optgroup label="🔄 Loop Actions">
+                        <option value="for">Vòng lặp For</option>
+                        <option value="while">Vòng lặp While</option>
                     </optgroup>
                     <optgroup label="🎭 Playwright Locators">
                         <option value="getByRole">Tìm theo Role</option>
@@ -405,6 +502,7 @@
     <script src="../js/file-manager.js"></script>
     <script src="../js/cookie-manager.js"></script>
     <script src="../js/slidebar.js"></script>
+    <script src="../js/ai-helper.js"></script>
 
     <!-- Additional CSS for enhanced features -->
     <style>
@@ -623,6 +721,21 @@
             box-shadow: 0 2px 8px rgba(79, 70, 229, 0.1);
         }
 
+        /* AI script step styles */
+        .ai-script-step {
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            margin-bottom: 8px;
+            background: white;
+            padding: 12px;
+            transition: all 0.2s ease;
+        }
+
+        .ai-script-step:hover {
+            border-color: #10b981;
+            box-shadow: 0 2px 8px rgba(16, 185, 129, 0.1);
+        }
+
         /* Enhanced modal styling */
         .modal {
             backdrop-filter: blur(2px);
@@ -747,6 +860,46 @@
             to {
                 transform: translate(-50%, -50%) rotate(360deg);
             }
+        }
+
+        /* AI page specific styles */
+        #ai .form-control[type="password"] {
+            font-family: 'Courier New', monospace;
+            letter-spacing: 1px;
+        }
+
+        #aiDescription {
+            resize: vertical;
+            min-height: 80px;
+        }
+
+        /* Nested steps styling for loops */
+        .nested-steps-container {
+            border: 1px solid #e2e8f0;
+            border-radius: 4px;
+            padding: 8px;
+            background: #f9fafb;
+            margin-top: 8px;
+        }
+
+        .nested-steps-container .empty-state {
+            padding: 20px;
+            text-align: center;
+            color: #64748b;
+            font-size: 11px;
+        }
+
+        .nested-step {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 4px;
+            padding: 8px;
+            margin-bottom: 4px;
+            font-size: 11px;
+        }
+
+        .nested-step:last-child {
+            margin-bottom: 0;
         }
     </style>
 </body>

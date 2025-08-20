@@ -26,7 +26,7 @@ function createSidebar() {
         return;
     }
 
-    // Create unique sidebar iframe for this tab
+    // Create unique sidebar iframe
     sidebarFrame = document.createElement('iframe');
     sidebarFrame.id = SIDEBAR_ID;
     sidebarFrame.src = chrome.runtime.getURL('ui/sidebar.html');
@@ -327,7 +327,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 }
                 break;
 
-            // File operations for setInputFiles
             case "getFileFromIndexedDB":
                 getFileFromIndexedDB(request.filePath)
                     .then(fileBlob => sendResponse({ success: true, fileBlob, tabId: getCurrentTabId() }))
@@ -340,6 +339,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     .catch(error => sendResponse({ success: false, error: error.message, tabId: getCurrentTabId() }));
                 return true;
                 
+            case "getSerializedDOM":
+                try {
+                    const serializedDOM = serializeDOM();
+                    sendResponse({ success: true, dom: serializedDOM, tabId: getCurrentTabId() });
+                } catch (error) {
+                    sendResponse({ success: false, error: error.message, tabId: getCurrentTabId() });
+                }
+                break;
+
             default:
                 sendResponse({ success: false, error: "Unknown action", tabId: getCurrentTabId() });
         }
@@ -811,11 +819,15 @@ async function executeScrollStep(step) {
     
     let targetX, targetY;
     
-    // Handle percentage scrolling
-    if (step.percentageY !== undefined) {
+    // Handle percentage scrolling - ENHANCED
+    if (step.percentageY !== undefined || step.percentageX !== undefined) {
+        const documentWidth = document.documentElement.scrollWidth - window.innerWidth;
         const documentHeight = document.documentElement.scrollHeight - window.innerHeight;
-        targetY = (step.percentageY / 100) * documentHeight;
-        targetX = step.x || currentScroll.x;
+        
+        targetX = step.percentageX !== undefined ? 
+            (step.percentageX / 100) * documentWidth : currentScroll.x;
+        targetY = step.percentageY !== undefined ? 
+            (step.percentageY / 100) * documentHeight : currentScroll.y;
     }
     // Handle delta scrolling (relative)
     else if (step.delta !== undefined) {
@@ -1035,7 +1047,7 @@ async function executeGetByTextStep(step) {
 }
 
 async function executeGetByPlaceholderStep(step) {
-    const element = await findElementByPlaceholder(step.placeholder, step.timeout || 5000);
+    const element = await findElementByPlaceholder(step.placeholder, step.timeout || 5000 );
     
     if (step.action === 'fill' && step.value) {
         element.focus();
@@ -1160,6 +1172,234 @@ async function executeInputValueStep(step) {
 // ====================================================================
 // PLAYWRIGHT-STYLE HELPER FUNCTIONS
 // ====================================================================
+// Enhanced DOM Serialization for AI
+function serializeDOM() {
+    const BLACKLISTED_TAGS = [
+        'script', 'style', 'link', 'meta', 'head', 'iframe', 'noscript',
+        'svg', 'canvas', 'audio', 'video' // Additional tags that don't add value for automation
+    ];
+
+    // Clone body to avoid affecting the real page
+    const body = document.body.cloneNode(true);
+    
+    // Remove blacklisted tags
+    body.querySelectorAll(BLACKLISTED_TAGS.join(',')).forEach((el) => el.remove());
+    
+    // Remove hidden elements and elements with no content
+    body.querySelectorAll('*').forEach((el) => {
+        const style = window.getComputedStyle(el);
+        
+        // Remove if hidden
+        if (style.display === 'none' || 
+            style.visibility === 'hidden' || 
+            style.opacity === '0' ||
+            el.hidden) {
+            el.remove();
+            return;
+        }
+        
+        // Remove if outside viewport and not interactive
+        if (!isElementVisible(el) && !isInteractableElement(el)) {
+            el.remove();
+            return;
+        }
+        
+        // Remove empty elements with no interactive children
+        if (el.textContent?.trim() === '' && 
+            el.children.length === 0 && 
+            !isInteractableElement(el)) {
+            el.remove();
+            return;
+        }
+    });
+    
+    let nextId = 1;
+    const elementMetadata = [];
+    
+    // Process all remaining elements
+    body.querySelectorAll('*').forEach((el) => {
+        // Add stagehand ID to interactive elements
+        if (isInteractableElement(el)) {
+            const stagehandId = String(nextId++);
+            el.setAttribute('__stagehand_id', stagehandId);
+            
+            // Collect metadata for better AI understanding
+            const metadata = {
+                id: stagehandId,
+                tag: el.tagName.toLowerCase(),
+                type: el.type || null,
+                disabled: el.disabled || false,
+                visible: isElementVisible(el),
+                text: el.textContent?.trim() || '',
+                placeholder: el.placeholder || null,
+                value: el.value || null
+            };
+            elementMetadata.push(metadata);
+            
+            // Add data attributes for AI context
+            if (el.disabled) el.setAttribute('data-disabled', 'true');
+            if (!isElementVisible(el)) el.setAttribute('data-hidden', 'true');
+            if (el.required) el.setAttribute('data-required', 'true');
+        }
+        
+        // Clean up attributes - keep only essential ones
+        const keepAttrs = [
+            'id', 'class', 'href', 'aria-label', 'placeholder', 'name', 
+            'type', 'value', 'title', 'alt', 'for', 'role',
+            '__stagehand_id', 'data-disabled', 'data-hidden', 'data-required'
+        ];
+        
+        const attributes = Array.from(el.attributes);
+        attributes.forEach((attr) => {
+            if (!keepAttrs.includes(attr.name)) {
+                el.removeAttribute(attr.name);
+            }
+        });
+        
+        // Optimize text content
+        optimizeTextContent(el);
+    });
+    
+    // Add metadata comment for AI
+    const metadataComment = `\n<!-- AI Context: ${elementMetadata.length} interactive elements found -->\n`;
+    
+    return metadataComment + body.outerHTML;
+}
+
+// Helper function to check if element is visible
+function isElementVisible(el) {
+    try {
+        const rect = el.getBoundingClientRect();
+        const style = window.getComputedStyle(el);
+        
+        return (
+            rect.width > 0 && 
+            rect.height > 0 && 
+            style.display !== 'none' && 
+            style.visibility !== 'hidden' && 
+            style.opacity !== '0' &&
+            rect.top < window.innerHeight + 100 && // Allow some elements below fold
+            rect.bottom > -100 && // Allow some elements above fold
+            rect.left < window.innerWidth + 100 &&
+            rect.right > -100
+        );
+    } catch (error) {
+        // If getBoundingClientRect fails, assume visible
+        return true;
+    }
+}
+
+// Enhanced interactive element detection
+function isInteractableElement(el) {
+    // Primary interactive tags
+    const interactableTags = ['button', 'a', 'input', 'textarea', 'select', 'option'];
+    
+    // Interactive roles
+    const interactableRoles = [
+        'button', 'link', 'textbox', 'checkbox', 'radio', 'menuitem', 
+        'tab', 'option', 'combobox', 'slider', 'spinbutton'
+    ];
+    
+    // Check tag names
+    if (interactableTags.includes(el.tagName.toLowerCase())) {
+        return true;
+    }
+    
+    // Check roles
+    const role = el.getAttribute('role');
+    if (role && interactableRoles.includes(role)) {
+        return true;
+    }
+    
+    // Check for click handlers
+    if (el.onclick || el.getAttribute('onclick')) {
+        return true;
+    }
+    
+    // Check for event listeners (limited detection)
+    if (el.hasAttribute('ng-click') || 
+        el.hasAttribute('v-on:click') || 
+        el.hasAttribute('@click') ||
+        el.classList.contains('clickable') ||
+        el.classList.contains('btn') ||
+        el.classList.contains('button')) {
+        return true;
+    }
+    
+    // Check if cursor is pointer
+    try {
+        const style = window.getComputedStyle(el);
+        if (style.cursor === 'pointer') {
+            return true;
+        }
+    } catch (error) {
+        // If getComputedStyle fails, continue
+    }
+    
+    // Check if element has tabindex (focusable)
+    if (el.hasAttribute('tabindex') && el.getAttribute('tabindex') !== '-1') {
+        return true;
+    }
+    
+    // Check for contenteditable
+    if (el.contentEditable === 'true') {
+        return true;
+    }
+    
+    return false;
+}
+
+// Optimize text content for AI processing
+function optimizeTextContent(el) {
+    // Only process elements with direct text content (no child elements)
+    if (el.childNodes.length === 1 && el.childNodes[0].nodeType === Node.TEXT_NODE) {
+        const text = el.textContent.trim();
+        
+        if (text.length > 150) {
+            // For very long text, keep beginning and end
+            const beginning = text.substring(0, 75);
+            const ending = text.substring(text.length - 25);
+            el.textContent = beginning + '...' + ending;
+        } else if (text.length > 100) {
+            // For moderately long text, truncate with ellipsis
+            el.textContent = text.substring(0, 100) + '...';
+        }
+    }
+    
+    // Handle multiple text nodes
+    const textNodes = getTextNodes(el);
+    textNodes.forEach(node => {
+        const text = node.textContent.trim();
+        if (text.length > 50 && !isInteractableElement(node.parentElement)) {
+            node.textContent = text.substring(0, 50) + '...';
+        }
+    });
+}
+
+// Get all text nodes within an element
+function getTextNodes(element) {
+    const textNodes = [];
+    const walker = document.createTreeWalker(
+        element,
+        NodeFilter.SHOW_TEXT,
+        {
+            acceptNode: function(node) {
+                // Only accept text nodes with meaningful content
+                return node.textContent.trim().length > 0 ? 
+                    NodeFilter.FILTER_ACCEPT : 
+                    NodeFilter.FILTER_REJECT;
+            }
+        },
+        false
+    );
+    
+    let node;
+    while (node = walker.nextNode()) {
+        textNodes.push(node);
+    }
+    
+    return textNodes;
+}
 
 function findElementByRole(role, name, timeout = 5000) {
     return new Promise((resolve, reject) => {
@@ -1358,118 +1598,6 @@ async function listFilesInIndexedDB() {
         type: file.type,
         uploadDate: file.uploadDate
     }));
-}
-
-// ====================================================================
-// UTILITY FUNCTIONS (ENHANCED WITH TAB LOGGING)
-// ====================================================================
-
-function waitForSelector(selector, timeout = 5000) {
-    return new Promise((resolve, reject) => {
-        const element = document.querySelector(selector);
-        if (element) {
-            resolve(element);
-            return;
-        }
-        
-        const observer = new MutationObserver((mutations, obs) => {
-            const element = document.querySelector(selector);
-            if (element) {
-                obs.disconnect();
-                resolve(element);
-            }
-        });
-        
-        observer.observe(document.body, { 
-            childList: true, 
-            subtree: true 
-        });
-        
-        setTimeout(() => {
-            observer.disconnect();
-            reject(new Error(`Tab ${getCurrentTabId()}: Element ${selector} không tìm thấy trong ${timeout}ms`));
-        }, timeout);
-    });
-}
-
-function waitForVisible(element, timeout = 5000) {
-    return new Promise((resolve, reject) => {
-        if (element.offsetParent !== null) {
-            resolve(element);
-            return;
-        }
-        
-        const observer = new MutationObserver((mutations, obs) => {
-            if (element.offsetParent !== null) {
-                obs.disconnect();
-                resolve(element);
-            }
-        });
-        
-        observer.observe(document.body, { 
-            attributes: true,
-            childList: true, 
-            subtree: true 
-        });
-        
-        setTimeout(() => {
-            observer.disconnect();
-            reject(new Error(`Tab ${getCurrentTabId()}: Element không hiển thị trong ${timeout}ms`));
-        }, timeout);
-    });
-}
-
-function generateSelector(element) {
-    // Priority: ID > Class > Tag
-    if (element.id) {
-        return `#${element.id}`;
-    }
-    
-    if (element.className && typeof element.className === 'string') {
-        const classes = element.className.trim().split(/\s+/).filter(cls => 
-            cls && !cls.includes(' ') && !cls.includes('.')
-        );
-        if (classes.length > 0) {
-            return `.${classes.join('.')}`;
-        }
-    }
-    
-    // Fallback to tag name with nth-child if needed
-    const tagName = element.tagName.toLowerCase();
-    const siblings = Array.from(element.parentNode?.children || [])
-        .filter(el => el.tagName === element.tagName);
-    
-    if (siblings.length > 1) {
-        const index = siblings.indexOf(element) + 1;
-        return `${tagName}:nth-child(${index})`;
-    }
-    
-    return tagName;
-}
-
-function sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-function getPageInfo() {
-    return {
-        title: document.title,
-        url: window.location.href,
-        elementCount: document.querySelectorAll('*').length,
-        tabId: getCurrentTabId()
-    };
-}
-
-function analyzePage() {
-    return {
-        title: document.title,
-        url: window.location.href,
-        elementCount: document.querySelectorAll('*').length,
-        clickableElements: document.querySelectorAll('button, a, input[type="submit"], [onclick]').length,
-        inputElements: document.querySelectorAll('input, textarea, select').length,
-        formElements: document.querySelectorAll('form').length,
-        tabId: getCurrentTabId()
-    };
 }
 
 // ====================================================================

@@ -1,4 +1,3 @@
-// IndexedDB Helper for Auto Clicker Extension
 class IndexedDBHelper {
     constructor() {
         this.dbName = 'AutoClickerDB';
@@ -377,6 +376,15 @@ class IndexedDBHelper {
                 reject(new Error('Failed to delete script'));
             };
         });
+    }
+
+    async getScriptsByPrefix(prefix) {
+        const allScripts = await this.getAllScripts();
+        return allScripts.filter(script => script.name.startsWith(prefix));
+    }
+
+    async getAIScripts() {
+        return this.getScriptsByPrefix('[AI]');
     }
 
     // Utility methods

@@ -1,4 +1,3 @@
-// Enhanced Script Builder with Playwright Export & Enhanced Scroll Options
 class EnhancedScriptBuilder {
     constructor() {
         this.steps = [];
@@ -247,6 +246,24 @@ class EnhancedScriptBuilder {
             inputValue: [
                 { name: 'selector', label: 'CSS Selector (input/textarea/select)', type: 'text', required: true },
                 { name: 'timeout', label: 'Timeout (ms)', type: 'number', default: 5000 }
+            ],
+
+            // NEW LOOP ACTIONS
+            for: [
+                { name: 'variable', label: 'Biến đếm', type: 'text-expand', required: true, default: 'i', placeholder: 'i, index, count' },
+                { name: 'start', label: 'Giá trị bắt đầu', type: 'number', required: true, default: 1 },
+                { name: 'end', label: 'Giá trị kết thúc', type: 'number', required: true, default: 5 },
+                { name: 'steps', label: 'Các bước trong vòng lặp', type: 'nestedSteps', required: true, help: 'Thêm các bước sẽ được lặp lại' }
+            ],
+            while: [
+                { name: 'conditionSelector', label: 'CSS Selector kiểm tra', type: 'text', required: true, placeholder: '.loading, #status' },
+                { name: 'conditionProperty', label: 'Thuộc tính kiểm tra', type: 'select', required: true, 
+                  options: ['textContent', 'innerText', 'value', 'checked', 'disabled', 'style.display'], default: 'textContent' },
+                { name: 'conditionOperator', label: 'Toán tử so sánh', type: 'select', required: true,
+                  options: ['equals', 'not_equals', 'contains', 'not_contains', 'exists', 'not_exists'], default: 'equals' },
+                { name: 'conditionValue', label: 'Giá trị so sánh', type: 'text', placeholder: 'Loading..., true, false' },
+                { name: 'maxIterations', label: 'Số lần lặp tối đa', type: 'number', default: 10, help: 'Để tránh vòng lặp vô hạn' },
+                { name: 'steps', label: 'Các bước trong vòng lặp', type: 'nestedSteps', required: true, help: 'Thêm các bước sẽ được lặp lại' }
             ]
         };
     }
@@ -895,9 +912,25 @@ class EnhancedScriptBuilder {
             ""
         ];
 
+        // Add goto current URL at the beginning if we have a tab
+        if (this.currentTabId) {
+            chrome.tabs.get(this.currentTabId, (tab) => {
+                if (tab && tab.url && !tab.url.startsWith('chrome://')) {
+                    lines.splice(6, 0, `  // Navigate to current page`);
+                    lines.splice(7, 0, `  await page.goto('${tab.url}');`);
+                    lines.splice(8, 0, "");
+                }
+            });
+        }
+
         this.steps.forEach((step, index) => {
             lines.push(`  // Step ${index + 1}: ${this.getStepTypeLabel(step.type)}`);
-            lines.push(this.stepToPlaywrightCode(step));
+            const code = this.stepToPlaywrightCode(step);
+            if (Array.isArray(code)) {
+                lines.push(...code);
+            } else {
+                lines.push(code);
+            }
             lines.push("");
         });
 
@@ -1008,6 +1041,71 @@ class EnhancedScriptBuilder {
                 const files = Array.isArray(step.filePaths) ? step.filePaths : [step.filePaths];
                 const fileList = files.map(f => `'${f}'`).join(', ');
                 return `  await page.locator('${step.selector}').setInputFiles([${fileList}]);`;
+
+            // NEW LOOP CASES
+            case 'for':
+                const forLines = [
+                    `  for (let ${step.variable} = ${step.start}; ${step.variable} <= ${step.end}; ${step.variable}++) {`,
+                    `    // Loop iteration \${${step.variable}}`
+                ];
+                
+                step.steps.forEach(subStep => {
+                    const subCode = this.stepToPlaywrightCode(subStep);
+                    if (Array.isArray(subCode)) {
+                        forLines.push(...subCode.map(line => '  ' + line));
+                    } else {
+                        forLines.push('  ' + subCode);
+                    }
+                });
+                
+                forLines.push('  }');
+                return forLines;
+
+            case 'while':
+                const whileLines = [
+                    `  let iterations = 0;`,
+                    `  while (iterations < ${step.maxIterations}) {`,
+                    `    iterations++;`,
+                    `    `,
+                    `    // Check condition`,
+                    `    const element = await page.locator('${step.conditionSelector}').first();`,
+                    `    const exists = await element.count() > 0;`,
+                    `    `,
+                    `    if (!exists) {`,
+                    `      if ('${step.conditionOperator}' === 'not_exists') break;`,
+                    `      if ('${step.conditionOperator}' !== 'exists') continue;`,
+                    `    } else {`,
+                    `      if ('${step.conditionOperator}' === 'exists') break;`,
+                    `    }`,
+                    `    `,
+                    `    if (exists) {`,
+                    `      const value = await element.${step.conditionProperty}();`,
+                    `      `,
+                    `      let conditionMet = false;`,
+                    `      switch ('${step.conditionOperator}') {`,
+                    `        case 'equals': conditionMet = value === '${step.conditionValue}'; break;`,
+                    `        case 'not_equals': conditionMet = value !== '${step.conditionValue}'; break;`,
+                    `        case 'contains': conditionMet = value.includes('${step.conditionValue}'); break;`,
+                    `        case 'not_contains': conditionMet = !value.includes('${step.conditionValue}'); break;`,
+                    `      }`,
+                    `      `,
+                    `      if (!conditionMet) break;`,
+                    `    }`,
+                    `    `,
+                    `    // Execute loop steps`
+                ];
+                
+                step.steps.forEach(subStep => {
+                    const subCode = this.stepToPlaywrightCode(subStep);
+                    if (Array.isArray(subCode)) {
+                        whileLines.push(...subCode.map(line => '    ' + line));
+                    } else {
+                        whileLines.push('    ' + subCode);
+                    }
+                });
+                
+                whileLines.push('  }');
+                return whileLines;
 
             default:
                 return `  // Unsupported step type: ${step.type}`;
@@ -1326,10 +1424,30 @@ class EnhancedScriptBuilder {
         // Use simple confirm for now - could be enhanced with custom modal
         return confirm(message);
     }
+
+    // Function to set steps from AI
+    setStepsFromAI(aiSteps) {
+        if (this.runningStates.get(this.currentTabId)?.isRunning) {
+            this.showAlert('Không thể tải khi đang chạy kịch bản.', 'warning');
+            return;
+        }
+
+        if (this.steps.length > 0 && !this.confirmSidebar('Bạn có chắc muốn thay thế kịch bản hiện tại bằng script từ AI?')) {
+            return;
+        }
+
+        this.steps = [...aiSteps];
+        this.updateStepsDisplay();
+        this.showAlert(`Đã tải ${aiSteps.length} bước từ AI thành công!`, 'success');
+    }
 }
 
+// Initialize script builder when page loads
 // Initialize script builder when page loads
 let enhancedScriptBuilder;
 document.addEventListener('DOMContentLoaded', () => {
     enhancedScriptBuilder = new EnhancedScriptBuilder();
+    
+    // Make script builder globally available
+    window.enhancedScriptBuilder = enhancedScriptBuilder;
 });
