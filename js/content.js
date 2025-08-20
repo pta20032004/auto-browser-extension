@@ -976,6 +976,74 @@ async function executeReloadStep(step) {
     return { reloaded: true, tabId: getCurrentTabId() };
 }
 
+
+// Cần thêm vào content.js
+function waitForSelector(selector, timeout = 5000) {
+    return new Promise((resolve, reject) => {
+        const element = document.querySelector(selector);
+        if (element) {
+            resolve(element);
+            return;
+        }
+        
+        const observer = new MutationObserver(() => {
+            const element = document.querySelector(selector);
+            if (element) {
+                observer.disconnect();
+                resolve(element);
+            }
+        });
+        
+        observer.observe(document.body, { 
+            childList: true, 
+            subtree: true 
+        });
+        
+        setTimeout(() => {
+            observer.disconnect();
+            reject(new Error(`Element '${selector}' not found within ${timeout}ms`));
+        }, timeout);
+    });
+}
+
+// Cũng cần thêm các helper function khác:
+function waitForVisible(element, timeout = 5000) {
+    return new Promise((resolve, reject) => {
+        const checkVisible = () => {
+            const rect = element.getBoundingClientRect();
+            const style = window.getComputedStyle(element);
+            return rect.width > 0 && rect.height > 0 && 
+                   style.display !== 'none' && 
+                   style.visibility !== 'hidden';
+        };
+        
+        if (checkVisible()) {
+            resolve(element);
+            return;
+        }
+        
+        const observer = new MutationObserver(() => {
+            if (checkVisible()) {
+                observer.disconnect();
+                resolve(element);
+            }
+        });
+        
+        observer.observe(element, { 
+            attributes: true, 
+            attributeFilter: ['style', 'class'] 
+        });
+        
+        setTimeout(() => {
+            observer.disconnect();
+            reject(new Error('Element not visible within timeout'));
+        }, timeout);
+    });
+}
+
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
 // ====================================================================
 // PLAYWRIGHT-STYLE LOCATOR FUNCTIONS
 // ====================================================================

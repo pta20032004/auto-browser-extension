@@ -26,7 +26,7 @@ class AIHelper {
             this.useGeneratedScript();
         });
 
-        // Save AI script button - NEW
+        // Save AI script button
         document.getElementById('saveAIScriptBtn')?.addEventListener('click', () => {
             this.saveAIScript();
         });
@@ -56,7 +56,7 @@ class AIHelper {
         }
     }
 
-    // NEW: Save AI generated script to IndexedDB
+    // Save AI generated script to IndexedDB
     async saveAIScript() {
         if (!this.generatedSteps || this.generatedSteps.length === 0) {
             this.showAlert('Không có script nào để lưu.', 'warning');
@@ -76,22 +76,52 @@ class AIHelper {
         }
     }
 
-    // NEW: Smart HTML truncation to avoid breaking tags
-    smartTruncateHTML(html, maxLength = 8000) {
+    // IMPROVED: Smart HTML truncation to preserve search elements
+    smartTruncateHTML(html, maxLength = 10000) {
         if (html.length <= maxLength) return html;
         
-        // Find safe cut position (after closing tag)
+        // Tìm và bảo vệ các element quan trọng trước khi truncate
+        const importantPatterns = [
+            /<input[^>]*(?:search|tìm|kiếm|query|q)[^>]*>/gi,
+            /<button[^>]*(?:search|tìm|submit|gửi|login|đăng)[^>]*>.*?<\/button>/gi,
+            /<form[^>]*>.*?<\/form>/gi,
+            /<nav[^>]*>.*?<\/nav>/gi,
+            /<header[^>]*>.*?<\/header>/gi
+        ];
+        
+        let protectedElements = [];
+        let protectedHtml = html;
+        
+        // Trích xuất các element quan trọng
+        importantPatterns.forEach((pattern, index) => {
+            const matches = html.match(pattern);
+            if (matches) {
+                matches.forEach((match, matchIndex) => {
+                    const placeholder = `__PROTECTED_${index}_${matchIndex}__`;
+                    protectedElements.push({ placeholder, content: match });
+                    protectedHtml = protectedHtml.replace(match, placeholder);
+                });
+            }
+        });
+        
+        // Truncate phần còn lại
         let cutPos = maxLength;
-        while (cutPos > 0 && html[cutPos] !== '>') {
+        while (cutPos > 0 && protectedHtml[cutPos] !== '>') {
             cutPos--;
         }
         
-        // If no closing tag found nearby, cut at nearest space
         if (cutPos < maxLength * 0.8) {
-            cutPos = html.lastIndexOf(' ', maxLength);
+            cutPos = protectedHtml.lastIndexOf(' ', maxLength);
         }
         
-        return html.substring(0, cutPos + 1) + '\n<!-- [HTML truncated for AI processing] -->';
+        let truncatedHtml = protectedHtml.substring(0, cutPos + 1);
+        
+        // Khôi phục các element quan trọng
+        protectedElements.forEach(({ placeholder, content }) => {
+            truncatedHtml = truncatedHtml.replace(placeholder, content);
+        });
+        
+        return truncatedHtml + '\n<!-- [HTML được tối ưu cho AI, các element quan trọng được bảo vệ] -->';
     }
 
     async generateScriptFromDescription() {
@@ -108,7 +138,7 @@ class AIHelper {
 
         const generateBtn = document.getElementById('generateAIScriptBtn');
         if (generateBtn) {
-            generateBtn.textContent = 'Đang xử lý...';
+            generateBtn.textContent = 'Đang phân tích DOM...';
             generateBtn.disabled = true;
         }
 
@@ -117,7 +147,11 @@ class AIHelper {
             const dom = await this.getCurrentPageDOM();
             const currentUrl = await this.getCurrentPageUrl();
             
-            // Generate script using AI
+            if (generateBtn) {
+                generateBtn.textContent = 'Đang tạo script...';
+            }
+            
+            // Generate script using AI with improved prompt
             const aiResponse = await this.callGoogleAI(description, dom, currentUrl);
             const steps = this.parseAIResponse(aiResponse);
             
@@ -138,7 +172,6 @@ class AIHelper {
 
     async getCurrentPageDOM() {
         return new Promise((resolve, reject) => {
-            // Send message to content script to get serialized DOM
             chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
                 if (tabs[0]) {
                     chrome.tabs.sendMessage(tabs[0].id, {
@@ -174,31 +207,38 @@ class AIHelper {
     async callGoogleAI(description, dom, currentUrl) {
         const availableActions = this.getAvailableActions();
         
-        // Use smart truncation instead of simple substring
-        const truncatedDOM = this.smartTruncateHTML(dom, 8000);
+        // Use improved smart truncation
+        const truncatedDOM = this.smartTruncateHTML(dom, 12000);
         
-        const prompt = `You are a web automation expert. Based on the user description and the provided HTML DOM, generate a JSON array of automation steps.
+        // IMPROVED PROMPT với instruction mạnh mẽ hơn
+        const prompt = `Bạn là chuyên gia tự động hóa web. Dựa trên mô tả của người dùng và DOM HTML được cung cấp, hãy tạo một mảng JSON các bước tự động hóa.
 
-USER DESCRIPTION: "${description}"
-CURRENT PAGE URL: ${currentUrl}
+MÔ TẢ NGƯỜI DÙNG: "${description}"
+URL TRANG HIỆN TẠI: ${currentUrl}
 
-AVAILABLE ACTIONS:
+CÁC HÀNH ĐỘNG CÓ SẴN:
 ${availableActions}
 
-HTML DOM (with interactive elements marked with __stagehand_id):
+DOM HTML THỰC TẾ (với các element tương tác được đánh dấu __stagehand_id):
 ${truncatedDOM}
 
-IMPORTANT RULES:
-1. Return ONLY a valid JSON array, no other text
-2. Use exact action names from the available actions list
-3. For target selectors, use CSS selectors or __stagehand_id attributes when available
-4. For scroll actions, use percentage values (0-100) when appropriate
-5. Include goto action at the beginning ONLY if navigating to a different URL
-6. Be specific with values (email, password, text to type)
-7. Use waitForElement before interacting with elements that might load dynamically
-8. Prefer __stagehand_id selectors over CSS selectors when available
+QUY TẮC QUAN TRỌNG:
+1. CHỈ trả về một mảng JSON hợp lệ, không có text nào khác
+2. CHỈ sử dụng tên hành động chính xác từ danh sách trên
+3. PHÂN TÍCH KỸ DOM để tìm selector chính xác - KHÔNG ĐƯỢC ĐOÁN MÒ
+4. Ưu tiên sử dụng __stagehand_id khi có: [__stagehand_id='số']
+5. Nếu không có __stagehand_id, dùng CSS selector có trong DOM
+6. Thêm hành động goto ở đầu CHỈ KHI cần điều hướng đến URL khác
+7. Cụ thể với giá trị (email, password, text cần nhập)
+8. Dùng waitForElement trước khi tương tác với element có thể load động
+9. KIỂM TRA KỸ DOM trước khi tạo selector
 
-EXAMPLE OUTPUT FORMAT:
+VÍ DỤ PHÂN TÍCH:
+- Nếu người dùng nói "tìm kiếm" và DOM có: <input class="search-box" placeholder="Tìm kiếm...">
+- Thì dùng: "selector": "input.search-box" HOẶC "input[placeholder*='Tìm']"
+- KHÔNG ĐƯỢC tự bịa: "selector": "input#search" (nếu không có trong DOM)
+
+VÍ DỤ ĐỊNH DẠNG OUTPUT:
 [
   {"action": "fill", "selector": "[__stagehand_id='1']", "text": "user@example.com"},
   {"action": "fill", "selector": "[__stagehand_id='2']", "text": "password123"},
@@ -206,13 +246,21 @@ EXAMPLE OUTPUT FORMAT:
   {"action": "waitForElement", "selector": ".success-message", "timeout": 5000}
 ]
 
-Generate the automation steps:`;
+QUY TẮC CUỐI CÙNG - ĐỌC KỸ:
+- BẮT BUỘC phải tìm selector TỒN TẠI trong DOM được cung cấp ở trên
+- KHÔNG ĐƯỢC tự bịa hoặc đoán selector không có trong DOM
+- Nếu không tìm thấy element phù hợp, hãy tìm element tương tự nhất
+- KIỂM TRA LẠI mỗi selector trước khi đưa vào JSON
+- CHỈ SỬ DỤNG selector xuất hiện trong DOM HTML ở trên
+
+Tạo các bước tự động hóa:`;
 
         try {
             // Get selected model from settings
             const selectedModel = document.getElementById('aiModel')?.value || 'gemini-2.5-flash';
 
-            // Create URL with selected model
+            console.log('Sending prompt to AI:', prompt.substring(0, 500) + '...');
+
             const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${this.apiKey}`, {
                 method: 'POST',
                 headers: {
@@ -225,70 +273,74 @@ Generate the automation steps:`;
                         }]
                     }],
                     generationConfig: {
-                        temperature: 0.1,
-                        maxOutputTokens: 2048,
+                        temperature: 0.05, // Giảm temperature để ít random hơn
+                        maxOutputTokens: 4096,
+                        topP: 0.8,
+                        topK: 40
                     }
                 })
             });
 
             if (!response.ok) {
-                throw new Error(`API Error: ${response.status} ${response.statusText}`);
+                const errorText = await response.text();
+                throw new Error(`API Error: ${response.status} ${response.statusText} - ${errorText}`);
             }
 
             const data = await response.json();
             
             if (!data.candidates || !data.candidates[0] || !data.candidates[0].content) {
+                console.error('Invalid API response:', data);
                 throw new Error('Invalid API response structure');
             }
 
             const generatedText = data.candidates[0].content.parts[0].text;
+            console.log('AI Response:', generatedText);
+            
             return generatedText;
 
         } catch (error) {
+            console.error('Google AI API error:', error);
             throw new Error(`Google AI API call failed: ${error.message}`);
         }
     }
 
     getAvailableActions() {
         return `
-BASIC ACTIONS:
-- click: Click on element {"action": "click", "selector": "css_selector"}
-- fill: Fill input field {"action": "fill", "selector": "css_selector", "text": "value"}
-- type: Type text (alternative to fill) {"action": "type", "selector": "css_selector", "text": "value"}
-- press: Press keyboard key {"action": "press", "key": "Enter|Tab|Escape|Space"}
-- hover: Hover over element {"action": "hover", "selector": "css_selector"}
+CÁC HÀNH ĐỘNG CƠ BẢN:
+- click: Click vào tọa độ {"action": "click", "x": 100, "y": 200}
+- clickElement: Click vào element {"action": "clickElement", "selector": "css_selector"}
+- fill: Điền input {"action": "fill", "selector": "css_selector", "text": "giá_trị"}
+- type: Nhập text (thay thế cho fill) {"action": "type", "selector": "css_selector", "text": "giá_trị"}
+- press: Nhấn phím {"action": "press", "key": "Enter|Tab|Escape|Space"}
+- hover: Hover vào element {"action": "hover", "selector": "css_selector"}
 
-NAVIGATION:
-- goto: Navigate to URL {"action": "goto", "url": "https://example.com"}
-- reload: Reload current page {"action": "reload"}
+ĐIỀU HƯỚNG:
+- goto: Đi tới URL {"action": "goto", "url": "https://example.com"}
+- reload: Reload trang {"action": "reload"}
 
-SCROLL ACTIONS:
-- scroll: Scroll page {"action": "scroll", "scrollMode": "percentage", "percentageY": 50} (scroll to 50% of page)
-- scroll: Scroll absolute {"action": "scroll", "scrollMode": "absolute", "x": 0, "y": 500}
-- scroll: Scroll relative {"action": "scroll", "scrollMode": "relative", "x": 0, "y": 200}
+SCROLL:
+- scroll: Scroll phần trăm {"action": "scroll", "scrollMode": "percentage", "percentageY": 50} (scroll tới 50% trang)
+- scroll: Scroll tuyệt đối {"action": "scroll", "scrollMode": "absolute", "x": 0, "y": 500}
+- scroll: Scroll tương đối {"action": "scroll", "scrollMode": "relative", "x": 0, "y": 200}
 - scroll: Scroll delta {"action": "scroll", "scrollMode": "delta", "delta": 300}
 
-FORM INTERACTIONS:
-- selectOption: Select dropdown option {"action": "selectOption", "selector": "select", "value": "option_value"}
+TƯƠNG TÁC FORM:
+- selectOption: Chọn option dropdown {"action": "selectOption", "selector": "select", "value": "giá_trị_option"}
 - check: Check/uncheck checkbox {"action": "check", "selector": "input[type='checkbox']", "checked": true}
 
-FILE UPLOAD:
+UPLOAD FILE:
 - setInputFiles: Upload files {"action": "setInputFiles", "selector": "input[type='file']", "filePaths": ["file1.txt"]}
 
-WAIT ACTIONS:
-- wait: Wait for time {"action": "wait", "duration": 2000}
-- waitForElement: Wait for element {"action": "waitForElement", "selector": "css_selector", "timeout": 10000}
+CHỜ ĐỢI:
+- wait: Chờ thời gian {"action": "wait", "duration": 2000}
+- waitForElement: Chờ element {"action": "waitForElement", "selector": "css_selector", "timeout": 10000}
 
-LOOPS:
-- for: For loop {"action": "for", "variable": "i", "start": 1, "end": 5, "steps": [...]}
-- while: While loop {"action": "while", "condition": {"selector": ".loading", "property": "textContent", "operator": "equals", "value": "Loading..."}, "maxIterations": 10, "steps": [...]}
-
-DATA EXTRACTION:
-- getText: Get text content {"action": "getText", "selector": "css_selector"}
-- getAttribute: Get attribute {"action": "getAttribute", "selector": "css_selector", "attribute": "href"}
-- innerText: Get inner text {"action": "innerText", "selector": "css_selector"}
-- textContent: Get text content {"action": "textContent", "selector": "css_selector"}
-- inputValue: Get input value {"action": "inputValue", "selector": "input"}
+LẤY DỮ LIỆU:
+- getText: Lấy text {"action": "getText", "selector": "css_selector"}
+- getAttribute: Lấy attribute {"action": "getAttribute", "selector": "css_selector", "attribute": "href"}
+- innerText: Lấy inner text {"action": "innerText", "selector": "css_selector"}
+- textContent: Lấy text content {"action": "textContent", "selector": "css_selector"}
+- inputValue: Lấy input value {"action": "inputValue", "selector": "input"}
 `;
     }
 
@@ -301,19 +353,25 @@ DATA EXTRACTION:
             // Find JSON array in the response
             const jsonMatch = cleanResponse.match(/\[[\s\S]*\]/);
             if (!jsonMatch) {
-                throw new Error('No JSON array found in AI response');
+                // Thử tìm JSON object thay vì array
+                const objectMatch = cleanResponse.match(/\{[\s\S]*\}/);
+                if (objectMatch) {
+                    const singleStep = JSON.parse(objectMatch[0]);
+                    return [singleStep]; // Wrap trong array
+                }
+                throw new Error('Không tìm thấy JSON array trong phản hồi AI');
             }
 
             const steps = JSON.parse(jsonMatch[0]);
             
             if (!Array.isArray(steps)) {
-                throw new Error('AI response is not an array');
+                throw new Error('Phản hồi AI không phải là array');
             }
 
             // Validate and convert steps to our format
             return steps.map((step, index) => {
                 if (!step.action) {
-                    throw new Error(`Step ${index + 1} missing action`);
+                    throw new Error(`Bước ${index + 1} thiếu action`);
                 }
 
                 // Convert AI format to our internal format
@@ -345,25 +403,18 @@ DATA EXTRACTION:
                     if (step.smooth !== undefined) convertedStep.smooth = step.smooth;
                 }
 
-                // Handle loop parameters
-                if (step.action === 'for') {
-                    convertedStep.variable = step.variable;
-                    convertedStep.start = step.start;
-                    convertedStep.end = step.end;
-                    convertedStep.steps = step.steps || [];
-                }
-
-                if (step.action === 'while') {
-                    convertedStep.condition = step.condition;
-                    convertedStep.maxIterations = step.maxIterations || 10;
-                    convertedStep.steps = step.steps || [];
+                // Validate selector exists (basic check)
+                if (convertedStep.selector && convertedStep.selector.includes('#') && !convertedStep.selector.includes('__stagehand_id')) {
+                    console.warn(`Warning: Selector ${convertedStep.selector} có thể không tồn tại trong DOM`);
                 }
 
                 return convertedStep;
             });
 
         } catch (error) {
-            throw new Error(`Failed to parse AI response: ${error.message}`);
+            console.error('Lỗi phân tích phản hồi AI:', error);
+            console.error('Raw AI response:', aiResponse);
+            throw new Error(`Không thể phân tích phản hồi AI: ${error.message}`);
         }
     }
 
@@ -387,7 +438,18 @@ DATA EXTRACTION:
                 margin-bottom: 8px;
                 background: white;
                 padding: 12px;
+                transition: all 0.2s ease;
             `;
+
+            // Hover effect
+            stepElement.addEventListener('mouseenter', () => {
+                stepElement.style.borderColor = '#10b981';
+                stepElement.style.boxShadow = '0 2px 8px rgba(16, 185, 129, 0.1)';
+            });
+            stepElement.addEventListener('mouseleave', () => {
+                stepElement.style.borderColor = '#e2e8f0';
+                stepElement.style.boxShadow = 'none';
+            });
 
             const stepHeader = document.createElement('div');
             stepHeader.style.cssText = `
@@ -395,13 +457,38 @@ DATA EXTRACTION:
                 font-weight: 600;
                 color: #1e293b;
                 margin-bottom: 4px;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
             `;
-            stepHeader.textContent = `${index + 1}. ${this.getStepTypeLabel(step.type)}`;
+            
+            const stepTitle = document.createElement('span');
+            stepTitle.textContent = `${index + 1}. ${this.getStepTypeLabel(step.type)}`;
+            
+            // Add validation indicator
+            const validationIcon = document.createElement('span');
+            if (step.selector && (step.selector.includes('__stagehand_id') || step.selector.includes('['))) {
+                validationIcon.textContent = '✅';
+                validationIcon.title = 'Selector có vẻ hợp lệ';
+                validationIcon.style.color = '#10b981';
+            } else if (step.selector) {
+                validationIcon.textContent = '⚠️';
+                validationIcon.title = 'Selector có thể không chính xác';
+                validationIcon.style.color = '#f59e0b';
+            } else {
+                validationIcon.textContent = '✅';
+                validationIcon.title = 'Không cần selector';
+                validationIcon.style.color = '#10b981';
+            }
+            
+            stepHeader.appendChild(stepTitle);
+            stepHeader.appendChild(validationIcon);
 
             const stepDetails = document.createElement('div');
             stepDetails.style.cssText = `
                 font-size: 11px;
                 color: #64748b;
+                line-height: 1.4;
             `;
             stepDetails.textContent = this.getStepDescription(step);
 
@@ -412,11 +499,31 @@ DATA EXTRACTION:
 
         // Store generated steps for later use
         this.generatedSteps = steps;
+        
+        // Show summary
+        const summary = document.createElement('div');
+        summary.style.cssText = `
+            margin-top: 12px;
+            padding: 12px;
+            background: #f0fdf4;
+            border: 1px solid #dcfce7;
+            border-radius: 6px;
+            font-size: 11px;
+            color: #166534;
+        `;
+        summary.innerHTML = `
+            <strong>📊 Tóm tắt:</strong><br>
+            • Tổng cộng: ${steps.length} bước<br>
+            • Có selector: ${steps.filter(s => s.selector).length} bước<br>
+            • Dùng __stagehand_id: ${steps.filter(s => s.selector && s.selector.includes('__stagehand_id')).length} bước
+        `;
+        container.appendChild(summary);
     }
 
     getStepTypeLabel(type) {
         const labels = {
-            click: 'Click',
+            click: 'Click (tọa độ)',
+            clickElement: 'Click Element', 
             fill: 'Điền Text',
             type: 'Nhập Text',
             press: 'Nhấn Phím',
@@ -433,9 +540,7 @@ DATA EXTRACTION:
             getAttribute: 'Lấy Attribute',
             innerText: 'Lấy Inner Text',
             textContent: 'Lấy Text Content',
-            inputValue: 'Lấy Input Value',
-            for: 'Vòng lặp For',
-            while: 'Vòng lặp While'
+            inputValue: 'Lấy Input Value'
         };
         return labels[type] || type;
     }
@@ -443,10 +548,12 @@ DATA EXTRACTION:
     getStepDescription(step) {
         switch (step.type) {
             case 'click':
+                return `Tọa độ: (${step.x}, ${step.y})`;
+            case 'clickElement':
                 return `Click: ${step.selector}`;
             case 'fill':
             case 'type':
-                return `${step.selector} → "${step.text}"`;
+                return `${step.selector} ← "${step.text}"`;
             case 'press':
                 return `Nhấn phím: ${step.key}`;
             case 'hover':
@@ -459,7 +566,7 @@ DATA EXTRACTION:
                 } else if (step.scrollMode === 'delta') {
                     return `Scroll ${step.delta}px`;
                 } else {
-                    return `Scroll (${step.x || 0}, ${step.y || 0})`;
+                    return `Scroll tới (${step.x || 0}, ${step.y || 0})`;
                 }
             case 'selectOption':
                 return `${step.selector} → ${step.value}`;
@@ -469,11 +576,8 @@ DATA EXTRACTION:
                 return `Chờ ${step.duration}ms`;
             case 'waitForElement':
                 return `Chờ: ${step.selector}`;
-            case 'for':
-                return `For ${step.variable} = ${step.start} to ${step.end} (${step.steps.length} bước)`;
-            case 'while':
-                const cond = step.condition;
-                return `While ${cond.selector}.${cond.property} ${cond.operator} "${cond.value}" (${step.steps.length} bước)`;
+            case 'setInputFiles':
+                return `Upload: ${step.filePaths ? step.filePaths.length : 0} file(s)`;
             default:
                 return JSON.stringify(step, null, 2);
         }
