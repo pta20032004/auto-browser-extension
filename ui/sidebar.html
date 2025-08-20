@@ -209,6 +209,62 @@
                     </div>
                 </div>
             </div>
+
+            <!-- DOM DEBUG SECTION -->
+            <div class="file-list">
+                <div class="task-header">
+                    <div class="task-title">🌐 DOM Sent to AI (Debug)</div>
+                    <div class="task-controls">
+                        <button class="btn btn-secondary btn-small" id="toggleDOMResponse">👁️ Show</button>
+                        <button class="btn btn-secondary btn-small" id="copyDOMResponse">📋 Copy</button>
+                        <button class="btn btn-secondary btn-small" id="clearDOMResponse">🗑️ Clear</button>
+                    </div>
+                </div>
+                <div id="aiDOMResponse" style="display: none;">
+                    <div style="background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 6px; padding: 12px; margin-bottom: 8px;">
+                        <div style="font-size: 11px; color: #666; margin-bottom: 8px;">
+                            <strong>🌐 DOM được gửi cho AI:</strong> Length: <span id="domLength">0</span> chars | 
+                            Truncated: <span id="domTruncated">No</span>
+                        </div>
+                        <textarea id="aiDOMText" style="width: 100%; height: 300px; font-family: 'Courier New', monospace; font-size: 9px; background: #fff; border: 1px solid #ddd; padding: 8px; border-radius: 4px; resize: vertical;" readonly placeholder="DOM content sẽ hiển thị ở đây..."></textarea>
+                    </div>
+                    <div style="background: #e7f3ff; border: 1px solid #b3d7ff; border-radius: 4px; padding: 8px; font-size: 10px; color: #0066cc;">
+                        <strong>💡 DOM Info:</strong><br>
+                        • DOM này được serialize từ trang web hiện tại<br>
+                        • Elements được đánh dấu __stagehand_id để AI dễ chọn<br>
+                        • Content có thể bị truncate để fit AI context limit<br>
+                        • Kiểm tra element bạn cần có trong DOM này không
+                    </div>
+                </div>
+            </div>
+
+            <!-- RAW AI RESPONSE DEBUG SECTION -->
+            <div class="file-list">
+                <div class="task-header">
+                    <div class="task-title">🤖 Raw AI Response (Debug)</div>
+                    <div class="task-controls">
+                        <button class="btn btn-secondary btn-small" id="toggleAIResponse">👁️ Show</button>
+                        <button class="btn btn-secondary btn-small" id="copyAIResponse">📋 Copy</button>
+                        <button class="btn btn-secondary btn-small" id="clearAIResponse">🗑️ Clear</button>
+                    </div>
+                </div>
+                <div id="aiRawResponse" style="display: none;">
+                    <div style="background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 6px; padding: 12px; margin-bottom: 8px;">
+                        <div style="font-size: 11px; color: #666; margin-bottom: 8px;">
+                            <strong>🤖 Debug Info:</strong> Raw response từ Google AI API
+                        </div>
+                        <textarea id="aiResponseText" style="width: 100%; height: 250px; font-family: 'Courier New', monospace; font-size: 10px; background: #fff; border: 1px solid #ddd; padding: 8px; border-radius: 4px; resize: vertical;" readonly placeholder="AI response sẽ hiển thị ở đây..."></textarea>
+                    </div>
+                    <div style="background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 4px; padding: 8px; font-size: 10px; color: #856404;">
+                        <strong>💡 Hướng dẫn debug:</strong><br>
+                        • Kiểm tra AI có trả về JSON array đúng format không<br>
+                        • Tìm lỗi selector không tồn tại trong DOM ở trên<br>
+                        • Xem AI có hiểu đúng yêu cầu không<br>
+                        • Check coordinates có hợp lệ (không undefined/NaN)<br>
+                        • So sánh selector với DOM content ở section trên
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- Cookies Page -->
@@ -404,7 +460,9 @@
                             📁 File Picker for Scripts<br>
                             🤖 AI Script Generation<br>
                             🔄 For/While Loops<br>
-                            🔧 All Step Types Fixed
+                            🔧 All Step Types Fixed<br>
+                            🌐 DOM Debug Display<br>
+                            🐛 AI Debug Display
                         </div>
                     </div>
                 </div>
@@ -900,6 +958,36 @@
 
         .nested-step:last-child {
             margin-bottom: 0;
+        }
+
+        /* AI Debug Section Styles */
+        #aiDOMResponse, #aiRawResponse {
+            animation: slideDown 0.3s ease-out;
+        }
+
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                max-height: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                max-height: 400px;
+                transform: translateY(0);
+            }
+        }
+
+        #aiDOMText, #aiResponseText {
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Courier New', monospace !important;
+            line-height: 1.4;
+            tab-size: 2;
+        }
+
+        #aiDOMText:focus, #aiResponseText:focus {
+            outline: none;
+            border-color: #4f46e5;
+            box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.1);
         }
     </style>
 </body>

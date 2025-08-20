@@ -341,10 +341,44 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 
             case "getSerializedDOM":
                 try {
+                    console.log('🔄 Starting Shadow DOM aware serialization...');
+                    
+                    // Test Shadow DOM capabilities first
+                    const shadowHosts = Array.from(document.querySelectorAll('*'))
+                        .filter(el => el.shadowRoot);
+                    
+                    console.log(`🔍 Found ${shadowHosts.length} Shadow DOM hosts on page`);
+                    
+                    // Run the enhanced serialization
                     const serializedDOM = serializeDOM();
-                    sendResponse({ success: true, dom: serializedDOM, tabId: getCurrentTabId() });
+                    
+                    // Validate results
+                    const interactiveCount = (serializedDOM.match(/__stagehand_id=/g) || []).length;
+                    const shadowProcessedCount = (serializedDOM.match(/data-shadow-processed="true"/g) || []).length;
+                    
+                    console.log(`✅ Serialization complete:`);
+                    console.log(`   - Interactive elements: ${interactiveCount}`);
+                    console.log(`   - Shadow DOM processed: ${shadowProcessedCount}`);
+                    console.log(`   - Total length: ${serializedDOM.length} chars`);
+                    
+                    sendResponse({ 
+                        success: true, 
+                        dom: serializedDOM, 
+                        tabId: getCurrentTabId(),
+                        metadata: {
+                            shadowHosts: shadowHosts.length,
+                            interactiveElements: interactiveCount,
+                            shadowProcessed: shadowProcessedCount,
+                            totalLength: serializedDOM.length
+                        }
+                    });
                 } catch (error) {
-                    sendResponse({ success: false, error: error.message, tabId: getCurrentTabId() });
+                    console.error('❌ Shadow DOM serialization failed:', error);
+                    sendResponse({ 
+                        success: false, 
+                        error: error.message, 
+                        tabId: getCurrentTabId() 
+                    });
                 }
                 break;
 
@@ -976,8 +1010,7 @@ async function executeReloadStep(step) {
     return { reloaded: true, tabId: getCurrentTabId() };
 }
 
-
-// Cần thêm vào content.js
+// Helper functions for step execution
 function waitForSelector(selector, timeout = 5000) {
     return new Promise((resolve, reject) => {
         const element = document.querySelector(selector);
@@ -1006,7 +1039,6 @@ function waitForSelector(selector, timeout = 5000) {
     });
 }
 
-// Cũng cần thêm các helper function khác:
 function waitForVisible(element, timeout = 5000) {
     return new Promise((resolve, reject) => {
         const checkVisible = () => {
@@ -1044,6 +1076,7 @@ function waitForVisible(element, timeout = 5000) {
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
+
 // ====================================================================
 // PLAYWRIGHT-STYLE LOCATOR FUNCTIONS
 // ====================================================================
@@ -1240,101 +1273,117 @@ async function executeInputValueStep(step) {
 // ====================================================================
 // PLAYWRIGHT-STYLE HELPER FUNCTIONS
 // ====================================================================
-// Enhanced DOM Serialization for AI
+
+// ====================================================================
+// ENHANCED DOM SERIALIZATION FOR AI - WITH SHADOW DOM SUPPORT
+// ====================================================================
+
+/**
+ * Serialize the DOM, including traversing through Shadow DOMs recursively.
+ * This is the core function to fix the issue on modern websites.
+ */
 function serializeDOM() {
     const BLACKLISTED_TAGS = [
         'script', 'style', 'link', 'meta', 'head', 'iframe', 'noscript',
-        'svg', 'canvas', 'audio', 'video' // Additional tags that don't add value for automation
+        'svg', 'canvas', 'audio', 'video'
     ];
 
-    // Clone body to avoid affecting the real page
-    const body = document.body.cloneNode(true);
-    
-    // Remove blacklisted tags
-    body.querySelectorAll(BLACKLISTED_TAGS.join(',')).forEach((el) => el.remove());
-    
-    // Remove hidden elements and elements with no content
-    body.querySelectorAll('*').forEach((el) => {
-        const style = window.getComputedStyle(el);
-        
-        // Remove if hidden
-        if (style.display === 'none' || 
-            style.visibility === 'hidden' || 
-            style.opacity === '0' ||
-            el.hidden) {
-            el.remove();
-            return;
-        }
-        
-        // Remove if outside viewport and not interactive
-        if (!isElementVisible(el) && !isInteractableElement(el)) {
-            el.remove();
-            return;
-        }
-        
-        // Remove empty elements with no interactive children
-        if (el.textContent?.trim() === '' && 
-            el.children.length === 0 && 
-            !isInteractableElement(el)) {
-            el.remove();
-            return;
-        }
-    });
-    
     let nextId = 1;
     const elementMetadata = [];
-    
-    // Process all remaining elements
-    body.querySelectorAll('*').forEach((el) => {
-        // Add stagehand ID to interactive elements
-        if (isInteractableElement(el)) {
-            const stagehandId = String(nextId++);
-            el.setAttribute('__stagehand_id', stagehandId);
-            
-            // Collect metadata for better AI understanding
-            const metadata = {
-                id: stagehandId,
-                tag: el.tagName.toLowerCase(),
-                type: el.type || null,
-                disabled: el.disabled || false,
-                visible: isElementVisible(el),
-                text: el.textContent?.trim() || '',
-                placeholder: el.placeholder || null,
-                value: el.value || null
-            };
-            elementMetadata.push(metadata);
-            
-            // Add data attributes for AI context
-            if (el.disabled) el.setAttribute('data-disabled', 'true');
-            if (!isElementVisible(el)) el.setAttribute('data-hidden', 'true');
-            if (el.required) el.setAttribute('data-required', 'true');
+
+    /**
+     * Recursively traverses a node and its shadow root (if it exists),
+     * cloning and cleaning it for AI processing.
+     * @param {Node} node - The node to traverse.
+     * @returns {Node} A cleaned and cloned version of the node.
+     */
+    function traverseAndClone(node) {
+        // 1. Filter out unwanted nodes
+        if (node.nodeType === Node.COMMENT_NODE) return null;
+        if (node.nodeType === Node.TEXT_NODE) {
+            // Keep text nodes with meaningful content
+            return node.textContent.trim() ? document.createTextNode(node.textContent.trim()) : null;
         }
+        if (node.nodeType !== Node.ELEMENT_NODE) return null;
+
+        const tagName = node.tagName.toLowerCase();
+        if (BLACKLISTED_TAGS.includes(tagName)) return null;
         
-        // Clean up attributes - keep only essential ones
+        // Filter hidden elements early
+        const style = window.getComputedStyle(node);
+        if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0' || node.hidden) {
+             return null;
+        }
+
+        // 2. Clone the element itself (without children)
+        const clonedElement = document.createElement(tagName);
+
+        // 3. Process and copy essential attributes
         const keepAttrs = [
             'id', 'class', 'href', 'aria-label', 'placeholder', 'name', 
-            'type', 'value', 'title', 'alt', 'for', 'role',
-            '__stagehand_id', 'data-disabled', 'data-hidden', 'data-required'
+            'type', 'value', 'title', 'alt', 'for', 'role'
         ];
-        
-        const attributes = Array.from(el.attributes);
-        attributes.forEach((attr) => {
-            if (!keepAttrs.includes(attr.name)) {
-                el.removeAttribute(attr.name);
+        for (const attr of node.attributes) {
+            if (keepAttrs.includes(attr.name)) {
+                clonedElement.setAttribute(attr.name, attr.value);
             }
-        });
+        }
         
-        // Optimize text content
-        optimizeTextContent(el);
-    });
-    
-    // Add metadata comment for AI
-    const metadataComment = `\n<!-- AI Context: ${elementMetadata.length} interactive elements found -->\n`;
-    
-    return metadataComment + body.outerHTML;
+        // 4. Add Stagehand ID for interactable elements
+        if (isInteractableElement(node)) {
+            const stagehandId = String(nextId++);
+            clonedElement.setAttribute('__stagehand_id', stagehandId);
+            
+            const metadata = {
+                id: stagehandId,
+                tag: tagName,
+                type: node.type || null,
+                disabled: node.disabled || false,
+                visible: isElementVisible(node),
+                text: node.textContent?.trim().substring(0, 100) || '',
+                placeholder: node.placeholder || null,
+                value: node.value || null
+            };
+            elementMetadata.push(metadata);
+
+            // Add helpful data attributes for the AI
+            if (node.disabled) clonedElement.setAttribute('data-disabled', 'true');
+            if (node.required) clonedElement.setAttribute('data-required', 'true');
+        }
+
+        // 5. **THE CORE LOGIC: Recurse into Shadow DOM or children**
+        if (node.shadowRoot) {
+            // 🔑 KEY FIX: If a shadow root exists, traverse its children
+            console.log(`Traversing Shadow DOM for ${tagName}`);
+            clonedElement.setAttribute('data-shadow-processed', 'true');
+            for (const childNode of node.shadowRoot.childNodes) {
+                const clonedChild = traverseAndClone(childNode);
+                if (clonedChild) clonedElement.appendChild(clonedChild);
+            }
+        } else {
+            // Otherwise, traverse the regular children
+            for (const childNode of node.childNodes) {
+                const clonedChild = traverseAndClone(childNode);
+                if (clonedChild) clonedElement.appendChild(clonedChild);
+            }
+        }
+        
+        // 6. Final cleanup: remove empty elements
+        if (clonedElement.childNodes.length === 0 && !clonedElement.textContent.trim() && !isInteractableElement(clonedElement)) {
+            return null;
+        }
+
+        return clonedElement;
+    }
+
+    const clonedBody = traverseAndClone(document.body);
+    if (!clonedBody) return "<body></body>";
+
+    const metadataComment = `\n\n`;
+    return metadataComment + clonedBody.outerHTML;
 }
 
-// Helper function to check if element is visible
+// Helper function to check if element is visible (no changes needed)
 function isElementVisible(el) {
     try {
         const rect = el.getBoundingClientRect();
@@ -1346,127 +1395,40 @@ function isElementVisible(el) {
             style.display !== 'none' && 
             style.visibility !== 'hidden' && 
             style.opacity !== '0' &&
-            rect.top < window.innerHeight + 100 && // Allow some elements below fold
-            rect.bottom > -100 && // Allow some elements above fold
+            rect.top < window.innerHeight + 100 &&
+            rect.bottom > -100 &&
             rect.left < window.innerWidth + 100 &&
             rect.right > -100
         );
     } catch (error) {
-        // If getBoundingClientRect fails, assume visible
         return true;
     }
 }
 
-// Enhanced interactive element detection
+// Enhanced interactive element detection (no changes needed)
 function isInteractableElement(el) {
-    // Primary interactive tags
     const interactableTags = ['button', 'a', 'input', 'textarea', 'select', 'option'];
-    
-    // Interactive roles
     const interactableRoles = [
         'button', 'link', 'textbox', 'checkbox', 'radio', 'menuitem', 
         'tab', 'option', 'combobox', 'slider', 'spinbutton'
     ];
     
-    // Check tag names
-    if (interactableTags.includes(el.tagName.toLowerCase())) {
-        return true;
-    }
+    if (interactableTags.includes(el.tagName.toLowerCase())) return true;
     
-    // Check roles
     const role = el.getAttribute('role');
-    if (role && interactableRoles.includes(role)) {
-        return true;
-    }
+    if (role && interactableRoles.includes(role)) return true;
     
-    // Check for click handlers
-    if (el.onclick || el.getAttribute('onclick')) {
-        return true;
-    }
+    if (el.onclick || el.getAttribute('onclick')) return true;
     
-    // Check for event listeners (limited detection)
-    if (el.hasAttribute('ng-click') || 
-        el.hasAttribute('v-on:click') || 
-        el.hasAttribute('@click') ||
-        el.classList.contains('clickable') ||
-        el.classList.contains('btn') ||
-        el.classList.contains('button')) {
-        return true;
-    }
-    
-    // Check if cursor is pointer
     try {
-        const style = window.getComputedStyle(el);
-        if (style.cursor === 'pointer') {
-            return true;
-        }
-    } catch (error) {
-        // If getComputedStyle fails, continue
-    }
+        if (window.getComputedStyle(el).cursor === 'pointer') return true;
+    } catch (e) { /* Ignore */ }
     
-    // Check if element has tabindex (focusable)
-    if (el.hasAttribute('tabindex') && el.getAttribute('tabindex') !== '-1') {
-        return true;
-    }
+    if (el.hasAttribute('tabindex') && el.getAttribute('tabindex') !== '-1') return true;
     
-    // Check for contenteditable
-    if (el.contentEditable === 'true') {
-        return true;
-    }
+    if (el.contentEditable === 'true') return true;
     
     return false;
-}
-
-// Optimize text content for AI processing
-function optimizeTextContent(el) {
-    // Only process elements with direct text content (no child elements)
-    if (el.childNodes.length === 1 && el.childNodes[0].nodeType === Node.TEXT_NODE) {
-        const text = el.textContent.trim();
-        
-        if (text.length > 150) {
-            // For very long text, keep beginning and end
-            const beginning = text.substring(0, 75);
-            const ending = text.substring(text.length - 25);
-            el.textContent = beginning + '...' + ending;
-        } else if (text.length > 100) {
-            // For moderately long text, truncate with ellipsis
-            el.textContent = text.substring(0, 100) + '...';
-        }
-    }
-    
-    // Handle multiple text nodes
-    const textNodes = getTextNodes(el);
-    textNodes.forEach(node => {
-        const text = node.textContent.trim();
-        if (text.length > 50 && !isInteractableElement(node.parentElement)) {
-            node.textContent = text.substring(0, 50) + '...';
-        }
-    });
-}
-
-// Get all text nodes within an element
-function getTextNodes(element) {
-    const textNodes = [];
-    const walker = document.createTreeWalker(
-        element,
-        NodeFilter.SHOW_TEXT,
-        {
-            acceptNode: function(node) {
-                // Only accept text nodes with meaningful content
-                return node.textContent.trim().length > 0 ? 
-                    NodeFilter.FILTER_ACCEPT : 
-                    NodeFilter.FILTER_REJECT;
-            }
-        },
-        false
-    );
-    
-    let node;
-    while (node = walker.nextNode()) {
-        textNodes.push(node);
-    }
-    
-    return textNodes;
 }
 
 function findElementByRole(role, name, timeout = 5000) {
@@ -1732,6 +1694,60 @@ function clearDocumentCookies() {
 }
 
 // ====================================================================
+// UTILITY FUNCTIONS
+// ====================================================================
+
+function generateSelector(element) {
+    if (element.id) {
+        return `#${element.id}`;
+    }
+    
+    if (element.className) {
+        const classes = element.className.split(' ').filter(c => c.trim());
+        if (classes.length > 0) {
+            return `.${classes.join('.')}`;
+        }
+    }
+    
+    // Fallback to tag name with nth-child
+    const parent = element.parentElement;
+    if (parent) {
+        const siblings = Array.from(parent.children);
+        const index = siblings.indexOf(element);
+        return `${element.tagName.toLowerCase()}:nth-child(${index + 1})`;
+    }
+    
+    return element.tagName.toLowerCase();
+}
+
+function getPageInfo() {
+    return {
+        url: window.location.href,
+        title: document.title,
+        domain: window.location.hostname,
+        viewport: getViewportInfo(),
+        elementCount: document.querySelectorAll('*').length,
+        tabId: getCurrentTabId()
+    };
+}
+
+function analyzePage() {
+    const interactableElements = Array.from(document.querySelectorAll('*'))
+        .filter(el => isInteractableElement(el));
+    
+    return {
+        url: window.location.href,
+        title: document.title,
+        interactableCount: interactableElements.length,
+        formCount: document.querySelectorAll('form').length,
+        linkCount: document.querySelectorAll('a').length,
+        buttonCount: document.querySelectorAll('button').length,
+        inputCount: document.querySelectorAll('input').length,
+        tabId: getCurrentTabId()
+    };
+}
+
+// ====================================================================
 // INITIALIZATION FOR THIS TAB
 // ====================================================================
 
@@ -1754,3 +1770,23 @@ window.addEventListener('beforeunload', () => {
     }
     console.log(`Tab ${getCurrentTabId()} is being unloaded`);
 });
+
+console.log('✅ Enhanced Shadow DOM support loaded successfully!');
+console.log('🛠️ Use window.debugShadowDOM?.test() to test on current page');
+
+// Debug functions for console testing
+window.debugShadowDOM = {
+    test: function() {
+        console.log('🔍 Testing Shadow DOM...');
+        const hosts = Array.from(document.querySelectorAll('*')).filter(el => el.shadowRoot);
+        console.log(`Shadow DOM hosts: ${hosts.length}`);
+        
+        const dom = serializeDOM();
+        const interactive = (dom.match(/__stagehand_id=/g) || []).length;
+        console.log(`Interactive elements found: ${interactive}`);
+        console.log(`DOM length: ${dom.length} chars`);
+        
+        return { hosts: hosts.length, interactive, length: dom.length };
+    },
+    serialize: () => serializeDOM()
+};

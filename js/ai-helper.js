@@ -3,6 +3,10 @@ class AIHelper {
         this.apiKey = '';
         this.initializeEventListeners();
         this.loadApiKey();
+        this.lastRawResponse = '';
+        this.lastDOMContent = '';
+        this.originalDOMLength = 0;
+        this.truncatedDOMLength = 0;
     }
 
     initializeEventListeners() {
@@ -29,6 +33,32 @@ class AIHelper {
         // Save AI script button
         document.getElementById('saveAIScriptBtn')?.addEventListener('click', () => {
             this.saveAIScript();
+        });
+
+        // DOM Debug Controls
+        document.getElementById('toggleDOMResponse')?.addEventListener('click', () => {
+            this.toggleDOMResponseDisplay();
+        });
+
+        document.getElementById('copyDOMResponse')?.addEventListener('click', () => {
+            this.copyDOMResponseToClipboard();
+        });
+
+        document.getElementById('clearDOMResponse')?.addEventListener('click', () => {
+            this.clearDOMResponseDisplay();
+        });
+
+        // AI Response Debug Controls
+        document.getElementById('toggleAIResponse')?.addEventListener('click', () => {
+            this.toggleAIResponseDisplay();
+        });
+
+        document.getElementById('copyAIResponse')?.addEventListener('click', () => {
+            this.copyAIResponseToClipboard();
+        });
+
+        document.getElementById('clearAIResponse')?.addEventListener('click', () => {
+            this.clearAIResponseDisplay();
         });
     }
 
@@ -86,7 +116,12 @@ class AIHelper {
             /<button[^>]*(?:search|tìm|submit|gửi|login|đăng)[^>]*>.*?<\/button>/gi,
             /<form[^>]*>.*?<\/form>/gi,
             /<nav[^>]*>.*?<\/nav>/gi,
-            /<header[^>]*>.*?<\/header>/gi
+            /<header[^>]*>.*?<\/header>/gi,
+            // ENHANCED: Add video/multimedia patterns
+            /<video[^>]*>.*?<\/video>/gi,
+            /<.*video.*class[^>]*>.*?<\/.*>/gi,
+            /<.*search.*class[^>]*>.*?<\/.*>/gi,
+            /<a[^>]*href[^>]*>.*?<\/a>/gi
         ];
         
         let protectedElements = [];
@@ -147,12 +182,26 @@ class AIHelper {
             const dom = await this.getCurrentPageDOM();
             const currentUrl = await this.getCurrentPageUrl();
             
+            // Store original DOM and display it
+            this.originalDOMLength = dom.length;
+            this.lastDOMContent = dom;
+            this.displayDOMContent(dom);
+            
             if (generateBtn) {
                 generateBtn.textContent = 'Đang tạo script...';
             }
             
+            // Use smart truncation and store truncated length
+            const truncatedDOM = this.smartTruncateHTML(dom, 12000);
+            this.truncatedDOMLength = truncatedDOM.length;
+            this.updateDOMTruncationInfo();
+            
             // Generate script using AI with improved prompt
             const aiResponse = await this.callGoogleAI(description, dom, currentUrl);
+            
+            // Display raw AI response immediately
+            this.displayRawAIResponse(aiResponse);
+            
             const steps = this.parseAIResponse(aiResponse);
             
             // Display generated script
@@ -162,6 +211,9 @@ class AIHelper {
         } catch (error) {
             console.error('AI script generation failed:', error);
             this.showAlert('Lỗi tạo script: ' + error.message, 'error');
+            
+            // Display error in raw response
+            this.displayRawAIResponse(`ERROR: ${error.message}\n\nStack: ${error.stack}`);
         } finally {
             if (generateBtn) {
                 generateBtn.textContent = '🤖 Tạo Script';
@@ -232,6 +284,7 @@ QUY TẮC QUAN TRỌNG:
 7. Cụ thể với giá trị (email, password, text cần nhập)
 8. Dùng waitForElement trước khi tương tác với element có thể load động
 9. KIỂM TRA KỸ DOM trước khi tạo selector
+10. ĐỐI VỚI CLICK TỌA ĐỘ: CHỈ dùng khi không tìm được CSS selector, PHẢI có x và y cụ thể
 
 VÍ DỤ PHÂN TÍCH:
 - Nếu người dùng nói "tìm kiếm" và DOM có: <input class="search-box" placeholder="Tìm kiếm...">
@@ -242,7 +295,7 @@ VÍ DỤ ĐỊNH DẠNG OUTPUT:
 [
   {"action": "fill", "selector": "[__stagehand_id='1']", "text": "user@example.com"},
   {"action": "fill", "selector": "[__stagehand_id='2']", "text": "password123"},
-  {"action": "click", "selector": "[__stagehand_id='3']"},
+  {"action": "clickElement", "selector": "[__stagehand_id='3']"},
   {"action": "waitForElement", "selector": ".success-message", "timeout": 5000}
 ]
 
@@ -252,6 +305,7 @@ QUY TẮC CUỐI CÙNG - ĐỌC KỸ:
 - Nếu không tìm thấy element phù hợp, hãy tìm element tương tự nhất
 - KIỂM TRA LẠI mỗi selector trước khi đưa vào JSON
 - CHỈ SỬ DỤNG selector xuất hiện trong DOM HTML ở trên
+- ĐỐI VỚI VIDEO/MULTIMEDIA: Tìm link hoặc button click thay vì video tag trực tiếp
 
 Tạo các bước tự động hóa:`;
 
@@ -392,6 +446,10 @@ LẤY DỮ LIỆU:
                 if (step.attribute) convertedStep.attribute = step.attribute;
                 if (step.filePaths) convertedStep.filePaths = step.filePaths;
 
+                // ENHANCED: Handle coordinates properly
+                if (step.x !== undefined) convertedStep.x = parseInt(step.x);
+                if (step.y !== undefined) convertedStep.y = parseInt(step.y);
+
                 // Handle scroll parameters
                 if (step.action === 'scroll') {
                     if (step.scrollMode) convertedStep.scrollMode = step.scrollMode;
@@ -401,6 +459,22 @@ LẤY DỮ LIỆU:
                     if (step.percentageY !== undefined) convertedStep.percentageY = step.percentageY;
                     if (step.delta !== undefined) convertedStep.delta = step.delta;
                     if (step.smooth !== undefined) convertedStep.smooth = step.smooth;
+                }
+
+                // ENHANCED: Validate coordinates for click action
+                if (convertedStep.type === 'click') {
+                    if (convertedStep.x === undefined || convertedStep.y === undefined || 
+                        isNaN(convertedStep.x) || isNaN(convertedStep.y)) {
+                        console.warn(`Warning: Click step ${index + 1} có tọa độ không hợp lệ:`, convertedStep);
+                        // Convert to clickElement if possible
+                        if (convertedStep.selector) {
+                            convertedStep.type = 'clickElement';
+                            delete convertedStep.x;
+                            delete convertedStep.y;
+                        } else {
+                            throw new Error(`Bước ${index + 1}: Click cần tọa độ x, y hợp lệ hoặc selector`);
+                        }
+                    }
                 }
 
                 // Validate selector exists (basic check)
@@ -467,7 +541,11 @@ LẤY DỮ LIỆU:
             
             // Add validation indicator
             const validationIcon = document.createElement('span');
-            if (step.selector && (step.selector.includes('__stagehand_id') || step.selector.includes('['))) {
+            if (step.type === 'click' && (step.x !== undefined && step.y !== undefined)) {
+                validationIcon.textContent = '🎯';
+                validationIcon.title = 'Click tọa độ';
+                validationIcon.style.color = '#f59e0b';
+            } else if (step.selector && (step.selector.includes('__stagehand_id') || step.selector.includes('['))) {
                 validationIcon.textContent = '✅';
                 validationIcon.title = 'Selector có vẻ hợp lệ';
                 validationIcon.style.color = '#10b981';
@@ -515,9 +593,167 @@ LẤY DỮ LIỆU:
             <strong>📊 Tóm tắt:</strong><br>
             • Tổng cộng: ${steps.length} bước<br>
             • Có selector: ${steps.filter(s => s.selector).length} bước<br>
-            • Dùng __stagehand_id: ${steps.filter(s => s.selector && s.selector.includes('__stagehand_id')).length} bước
+            • Dùng __stagehand_id: ${steps.filter(s => s.selector && s.selector.includes('__stagehand_id')).length} bước<br>
+            • Click tọa độ: ${steps.filter(s => s.type === 'click' && s.x !== undefined).length} bước
         `;
         container.appendChild(summary);
+    }
+
+    // DOM Display Functions
+    displayDOMContent(domContent) {
+        this.lastDOMContent = domContent;
+        const textarea = document.getElementById('aiDOMText');
+        const lengthSpan = document.getElementById('domLength');
+        
+        if (textarea) {
+            textarea.value = domContent;
+        }
+        
+        if (lengthSpan) {
+            lengthSpan.textContent = domContent.length.toLocaleString();
+        }
+
+        // Auto show DOM container
+        const container = document.getElementById('aiDOMResponse');
+        const button = document.getElementById('toggleDOMResponse');
+        if (container && container.style.display === 'none') {
+            container.style.display = 'block';
+            if (button) button.textContent = '👁️ Hide';
+        }
+    }
+
+    updateDOMTruncationInfo() {
+        const truncatedSpan = document.getElementById('domTruncated');
+        if (truncatedSpan) {
+            const wasTruncated = this.truncatedDOMLength < this.originalDOMLength;
+            truncatedSpan.textContent = wasTruncated ? 'Yes' : 'No';
+            truncatedSpan.style.color = wasTruncated ? '#dc2626' : '#16a34a';
+        }
+    }
+
+    toggleDOMResponseDisplay() {
+        const container = document.getElementById('aiDOMResponse');
+        const button = document.getElementById('toggleDOMResponse');
+        
+        if (container && button) {
+            if (container.style.display === 'none') {
+                container.style.display = 'block';
+                button.textContent = '👁️ Hide';
+            } else {
+                container.style.display = 'none';
+                button.textContent = '👁️ Show';
+            }
+        }
+    }
+
+    copyDOMResponseToClipboard() {
+        const textarea = document.getElementById('aiDOMText');
+        if (textarea && textarea.value) {
+            const tempInput = document.createElement('textarea');
+            tempInput.value = textarea.value;
+            document.body.appendChild(tempInput);
+            tempInput.select();
+            document.execCommand('copy');
+            document.body.removeChild(tempInput);
+            
+            this.showAlert('Đã copy DOM content vào clipboard!', 'success');
+        } else {
+            this.showAlert('Không có DOM content để copy!', 'warning');
+        }
+    }
+
+    clearDOMResponseDisplay() {
+        const textarea = document.getElementById('aiDOMText');
+        const lengthSpan = document.getElementById('domLength');
+        const truncatedSpan = document.getElementById('domTruncated');
+        
+        if (textarea) {
+            textarea.value = '';
+        }
+        if (lengthSpan) {
+            lengthSpan.textContent = '0';
+        }
+        if (truncatedSpan) {
+            truncatedSpan.textContent = 'No';
+        }
+        
+        this.lastDOMContent = '';
+        this.originalDOMLength = 0;
+        this.truncatedDOMLength = 0;
+        
+        this.showAlert('Đã xóa DOM content!', 'info');
+    }
+
+    // AI Response Display Functions
+    displayRawAIResponse(rawResponse) {
+        this.lastRawResponse = rawResponse;
+        const textarea = document.getElementById('aiResponseText');
+        if (textarea) {
+            // Format JSON đẹp nếu có thể parse
+            try {
+                // Try to extract JSON from response
+                const jsonMatch = rawResponse.match(/\[[\s\S]*\]/) || rawResponse.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    const parsed = JSON.parse(jsonMatch[0]);
+                    const formatted = JSON.stringify(parsed, null, 2);
+                    textarea.value = `=== RAW AI RESPONSE ===\n${rawResponse}\n\n=== EXTRACTED JSON ===\n${formatted}`;
+                } else {
+                    textarea.value = `=== RAW AI RESPONSE ===\n${rawResponse}\n\n=== NOTE ===\nKhông tìm thấy JSON hợp lệ trong response`;
+                }
+            } catch (e) {
+                // Nếu không phải JSON thì hiển thị raw
+                textarea.value = `=== RAW AI RESPONSE ===\n${rawResponse}\n\n=== PARSE ERROR ===\n${e.message}`;
+            }
+        }
+
+        // Auto show if first time
+        const container = document.getElementById('aiRawResponse');
+        const button = document.getElementById('toggleAIResponse');
+        if (container && container.style.display === 'none') {
+            container.style.display = 'block';
+            if (button) button.textContent = '👁️ Hide';
+        }
+    }
+
+    toggleAIResponseDisplay() {
+        const container = document.getElementById('aiRawResponse');
+        const button = document.getElementById('toggleAIResponse');
+        
+        if (container && button) {
+            if (container.style.display === 'none') {
+                container.style.display = 'block';
+                button.textContent = '👁️ Hide';
+            } else {
+                container.style.display = 'none';
+                button.textContent = '👁️ Show';
+            }
+        }
+    }
+
+    copyAIResponseToClipboard() {
+        const textarea = document.getElementById('aiResponseText');
+        if (textarea && textarea.value) {
+            // Create a temporary input to select and copy
+            const tempInput = document.createElement('textarea');
+            tempInput.value = textarea.value;
+            document.body.appendChild(tempInput);
+            tempInput.select();
+            document.execCommand('copy');
+            document.body.removeChild(tempInput);
+            
+            this.showAlert('Đã copy AI response vào clipboard!', 'success');
+        } else {
+            this.showAlert('Không có AI response để copy!', 'warning');
+        }
+    }
+
+    clearAIResponseDisplay() {
+        const textarea = document.getElementById('aiResponseText');
+        if (textarea) {
+            textarea.value = '';
+            this.lastRawResponse = '';
+        }
+        this.showAlert('Đã xóa AI response!', 'info');
     }
 
     getStepTypeLabel(type) {
