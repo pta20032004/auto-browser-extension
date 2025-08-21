@@ -43,9 +43,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const xCoordEl = document.getElementById('xCoord');
     const yCoordEl = document.getElementById('yCoord');
 
-    // ====================================================================
-    // ENHANCED VIEWPORT INFO DISPLAY
-    // ====================================================================
+    
     
     function updateViewportInfo() {
         // Get viewport info from parent window
@@ -140,9 +138,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // ====================================================================
-    // EVENT LISTENERS
-    // ====================================================================
+   
 
     // Start location picking - FIXED
     if (startSelectionBtn) {
@@ -238,9 +234,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // ====================================================================
-    // TAB-SPECIFIC FUNCTIONS - FIXED COORDINATE PICKING
-    // ====================================================================
+   
 
     function startLocationPicking() {
         if (tabState.isPicking) return;
@@ -327,9 +321,6 @@ document.addEventListener('DOMContentLoaded', () => {
         showAlert(`Tab ${currentTabId}: Đã dừng ghi lại!`, 'success');
     }
 
-    // ====================================================================
-    // STATE MANAGEMENT
-    // ====================================================================
 
     function updateTabState(newState) {
         tabState = { ...tabState, ...newState };
@@ -356,9 +347,7 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log(`Tab ${currentTabId} state loaded:`, tabState);
     }
 
-    // ====================================================================
-    // MESSAGE HANDLING - ENHANCED
-    // ====================================================================
+ 
 
     // Listen for messages from parent content script
     window.addEventListener('message', (event) => {
@@ -464,9 +453,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // ====================================================================
-    // UI UPDATE FUNCTIONS - ENHANCED
-    // ====================================================================
+   
 
     function updateCoordsDisplay(coords) {
         tabState.coords = coords;
@@ -517,9 +504,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // ====================================================================
-    // UTILITY FUNCTIONS
-    // ====================================================================
+ 
 
     function sendMessageToParent(message) {
         if (window.parent && window.parent !== window) {
@@ -583,9 +568,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 4000);
     }
 
-    // ====================================================================
-    // SETTINGS MANAGEMENT (TAB-SPECIFIC)
-    // ====================================================================
+ 
 
     function loadSavedState() {
         if (!currentTabId) return;
@@ -634,11 +617,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // ====================================================================
-    // INITIALIZATION
-    // ====================================================================
-
-    // Get current tab ID first
+   
     getCurrentTabId();
     
     // Load default settings

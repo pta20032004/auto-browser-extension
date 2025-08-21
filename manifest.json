@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Web Automation Suite",
-  "version": "4.1",
+  "version": "1",
   "description": "Advanced automation tool with Playwright export, enhanced cookie management, viewport info, and clipboard support",
   "permissions": [
     "storage",
@@ -55,6 +55,6 @@
     "extension_pages": "script-src 'self'; object-src 'self';"
   },
   "author": "Web Automation Suite Team",
-  "homepage_url": "https://github.com/your-repo/web-automation-suite",
+  "homepage_url": "https://github.com/",
   "minimum_chrome_version": "88"
 }

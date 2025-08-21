@@ -1259,16 +1259,10 @@ async function executeInputValueStep(step) {
     return { selector: step.selector, inputValue: value, tabId: getCurrentTabId() };
 }
 
-// ====================================================================
-// PLAYWRIGHT-STYLE HELPER FUNCTIONS
-// ====================================================================
 
-// ====================================================================
-// IMPROVED DOM SERIALIZATION - NO STAGEHAND_ID!
-// ====================================================================
 
 /**
- * 🔥 FIXED SERIALIZATION - NO MORE FAKE IDs!
+ * - NO MORE FAKE IDs!
  * Serialize DOM with REAL selectors only
  */
 function serializeDOM() {
@@ -1362,7 +1356,7 @@ function serializeDOM() {
     const clonedBody = traverseAndClone(document.body);
     if (!clonedBody) return "<body></body>";
 
-    const metadataComment = `\n<!-- 🔥 CLEAN DOM - NO FAKE IDs! Use real selectors only. -->\n`;
+    const metadataComment = `\n<!-- CLEAN DOM - NO FAKE IDs! Use real selectors only. -->\n`;
     return metadataComment + clonedBody.outerHTML;
 }
 
@@ -1563,9 +1557,9 @@ function findElementByPlaceholder(placeholder, timeout = 5000) {
     });
 }
 
-// ====================================================================
-// 🔥 IMPROVED SELECTOR GENERATION - REAL SELECTORS ONLY!
-// ====================================================================
+
+//  IMPROVED SELECTOR GENERATION - REAL SELECTORS ONLY!
+
 
 /**
  * Generate stable, real CSS selectors
